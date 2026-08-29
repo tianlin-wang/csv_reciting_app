@@ -8,6 +8,7 @@ import re
 import json
 import threading
 
+
 def split_answers(s):
     if not s:
         return []
