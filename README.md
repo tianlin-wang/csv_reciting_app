@@ -1,0 +1,2 @@
+# csv_reciting_app
+一个使用python和ollama ai读取csv单词表格的ai默写助手
