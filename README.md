@@ -1,5 +1,7 @@
 # 📚 词汇学习默写工具 (CSV Learning App)
 
+> 🔐 仓库已配置 SSH 连接，推送更稳定！
+
 一个基于 Python + Tkinter 的 CSV 词汇默写学习助手，支持多种 AI 服务商（包括本地 Ollama）进行智能判定对错。
 
 ## ✨ 主要功能
