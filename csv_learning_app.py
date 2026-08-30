@@ -537,8 +537,41 @@ class CSVLearningApp:
         self.csv_file_path = None
         self.ai_assistant = OllamaAILearningAssistant()
         self.processing = False
+        self.paren_check_main = None
+        self.clean_paren_var_main = None
 
         self.setup_ui()
+
+    def _on_toggle_clean_paren(self):
+        enabled = self.clean_paren_var_main.get()
+        self.ai_assistant.set_clean_parentheses(enabled)
+        if hasattr(self, 'clean_paren_var') and self.clean_paren_var is not None:
+            self.clean_paren_var.set(enabled)
+        status = "已开启" if enabled else "已关闭"
+        color = "green" if enabled else "gray"
+        self.ai_result_text.insert(tk.END, f"🧹 括号清理功能 {status}\n")
+        self.ai_result_text.see(tk.END)
+        if self.paren_check_main:
+            self.paren_check_main.config(foreground=color)
+        self._update_paren_tooltip()
+
+    def _update_paren_tooltip(self):
+        if not self.paren_check_main:
+            return
+        enabled = self.clean_paren_var_main.get() if self.clean_paren_var_main else True
+        if enabled:
+            tip = "🧹 已开启：苹果（复数） → 苹果（括号备注不参与判定）"
+        else:
+            tip = "📝 已关闭：苹果（复数）原样参与判定（可能导致AI误判）"
+        self.paren_check_main.config(text=tip)
+
+    def _sync_paren_ui_from_config(self):
+        val = self.ai_assistant.clean_parentheses
+        if self.clean_paren_var_main is not None:
+            self.clean_paren_var_main.set(val)
+        if hasattr(self, 'clean_paren_var') and self.clean_paren_var is not None:
+            self.clean_paren_var.set(val)
+        self._update_paren_tooltip()
 
     def geometry(self, size):
         self.root.geometry(size)
@@ -563,6 +596,8 @@ class CSVLearningApp:
 
         self.setup_learning_tab(learning_tab)
         self.setup_settings_tab(settings_tab)
+        self._sync_paren_ui_from_config()
+        self.update_ai_status()
 
     def setup_learning_tab(self, parent):
         file_frame = ttk.LabelFrame(parent, text="📁 文件操作", padding="5")
@@ -585,6 +620,17 @@ class CSVLearningApp:
         self.stats_label.grid(row=0, column=2, padx=10)
         self.ai_status_label = ttk.Label(info_frame, text="🦙 AI: Ollama", font=('Microsoft YaHei UI', 10), foreground='green')
         self.ai_status_label.grid(row=0, column=3, padx=10)
+
+        self.clean_paren_var_main = tk.BooleanVar(value=self.ai_assistant.clean_parentheses)
+        self.paren_check_main = ttk.Checkbutton(
+            info_frame,
+            text="🧹 忽略括号备注",
+            variable=self.clean_paren_var_main,
+            command=self._on_toggle_clean_paren
+        )
+        self.paren_check_main.grid(row=0, column=4, padx=10)
+        self._update_paren_tooltip()
+        self.paren_check_main.bind('<Enter>', lambda e: self._update_paren_tooltip())
 
         question_frame = ttk.LabelFrame(parent, text="❓ 当前题目", padding="15")
         question_frame.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
@@ -832,6 +878,7 @@ class CSVLearningApp:
         self.ai_assistant.set_clean_parentheses(clean_paren)
 
         self.update_ai_status()
+        self._sync_paren_ui_from_config()
 
         providers = self.ai_assistant.get_available_providers()
         provider_name = providers.get(provider, {}).get('name', provider)
