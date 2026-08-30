@@ -1,6 +1,6 @@
 import csv
 import os
-from datetime import datetime
+import datetime
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 import difflib
@@ -568,9 +568,11 @@ class CSVLearningApp:
         file_frame = ttk.LabelFrame(parent, text="📁 文件操作", padding="5")
         file_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
 
-        ttk.Button(file_frame, text="选择 CSV 文件", command=self.load_csv).grid(row=0, column=0, padx=5)
-        self.file_label = ttk.Label(file_frame, text="未选择文件")
-        self.file_label.grid(row=0, column=1, padx=5, sticky=tk.W)
+        ttk.Button(file_frame, text="选择 CSV 文件", command=self.load_csv).grid(row=0, column=0, padx=3)
+        ttk.Button(file_frame, text="💾 保存进度", command=self.save_progress).grid(row=0, column=1, padx=3)
+        ttk.Button(file_frame, text="📂 读取进度", command=self.load_progress).grid(row=0, column=2, padx=3)
+        self.file_label = ttk.Label(file_frame, text="未选择文件", font=('Microsoft YaHei UI', 9), foreground='#555')
+        self.file_label.grid(row=0, column=3, padx=10, sticky=tk.W)
 
         info_frame = ttk.LabelFrame(parent, text="📊 进度信息", padding="5")
         info_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
@@ -938,6 +940,130 @@ class CSVLearningApp:
             except Exception as e:
                 messagebox.showerror("错误", f"无法读取文件: {str(e)}")
 
+    def save_progress(self):
+        if not self.current_csv_data:
+            messagebox.showwarning("提示", "请先加载 CSV 文件！")
+            return
+        try:
+            csv_basename = os.path.splitext(os.path.basename(self.csv_file_path))[0] if hasattr(self, 'csv_file_path') and self.csv_file_path else "未命名"
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            default_name = f"{timestamp}_{csv_basename}.txt"
+            file_path = filedialog.asksaveasfilename(
+                title="保存学习进度",
+                defaultextension=".txt",
+                initialfile=default_name,
+                initialdir=os.getcwd(),
+                filetypes=[("进度文件", "*.txt"), ("All files", "*.*")]
+            )
+            if not file_path:
+                return
+
+            progress_data = {
+                "save_time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "csv_file_path": self.csv_file_path if hasattr(self, 'csv_file_path') else "",
+                "csv_file_name": os.path.basename(self.csv_file_path) if hasattr(self, 'csv_file_path') else "",
+                "total_questions": self.total_questions,
+                "current_index": self.current_index,
+                "current_round": self.current_round,
+                "correct_count": self.correct_count,
+                "wrong_count": self.wrong_count,
+                "wrong_answers": self.wrong_answers
+            }
+
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(progress_data, f, ensure_ascii=False, indent=2)
+
+            info_text = (
+                f"✅ 学习进度已成功保存！\n\n"
+                f"📅 保存时间: {progress_data['save_time']}\n"
+                f"📚 CSV 文件: {progress_data['csv_file_name']}\n"
+                f"📍 当前进度: 第 {progress_data['current_index'] + 1} / {progress_data['total_questions']} 题\n"
+                f"🔁 当前轮次: 第 {progress_data['current_round']} 轮\n"
+                f"📈 正确: {progress_data['correct_count']} | 错误: {progress_data['wrong_count']}\n"
+                f"📝 错题数: {len(progress_data['wrong_answers'])}\n\n"
+                f"💾 文件名: {os.path.basename(file_path)}"
+            )
+            self.ai_result_text.insert(tk.END, f"\n{'='*75}\n{info_text}\n{'='*75}\n\n")
+            self.ai_result_text.see(tk.END)
+            messagebox.showinfo("成功", info_text)
+
+        except Exception as e:
+            messagebox.showerror("错误", f"保存进度失败:\n{str(e)}")
+
+    def load_progress(self):
+        file_path = filedialog.askopenfilename(
+            title="读取学习进度",
+            filetypes=[("进度文件", "*.txt"), ("All files", "*.*")],
+            initialdir=os.getcwd()
+        )
+        if not file_path:
+            return
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            csv_path = data.get("csv_file_path", "")
+            if not csv_path or not os.path.exists(csv_path):
+                alt = messagebox.askyesno(
+                    "CSV 文件未找到",
+                    f"进度中的 CSV 文件不存在:\n{csv_path}\n\n是否手动选择新的 CSV 文件？\n（如果列顺序一致可继续使用）"
+                )
+                if alt:
+                    csv_path = filedialog.askopenfilename(
+                        filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+                    )
+                    if not csv_path:
+                        return
+                else:
+                    return
+
+            with open(csv_path, 'r', encoding='utf-8') as f:
+                reader = csv.reader(f)
+                self.current_csv_data = list(reader)
+
+            if len(self.current_csv_data) == 0:
+                messagebox.showerror("错误", "CSV 文件为空！")
+                return
+            if len(self.current_csv_data[0]) < 3:
+                messagebox.showerror("错误", "CSV 文件至少需要3列数据！")
+                return
+
+            self.csv_file_path = csv_path
+            self.file_label.config(text=os.path.basename(csv_path))
+            self.total_questions = len(self.current_csv_data)
+            self.current_index = min(int(data.get("current_index", 0)), self.total_questions - 1)
+            self.current_round = int(data.get("current_round", 1))
+            self.correct_count = int(data.get("correct_count", 0))
+            self.wrong_count = int(data.get("wrong_count", 0))
+            self.wrong_answers = data.get("wrong_answers", [])
+            if not isinstance(self.wrong_answers, list):
+                self.wrong_answers = []
+
+            self.update_progress()
+            self.update_ai_status()
+            self.display_current_question()
+            self.ai_result_text.delete(1.0, tk.END)
+
+            save_time = data.get("save_time", "未知")
+            info_text = (
+                f"✅ 学习进度已成功恢复！\n\n"
+                f"📅 进度保存时间: {save_time}\n"
+                f"📚 CSV 文件: {os.path.basename(csv_path)}\n"
+                f"📍 当前进度: 第 {self.current_index + 1} / {self.total_questions} 题\n"
+                f"🔁 当前轮次: 第 {self.current_round} 轮\n"
+                f"📈 正确: {self.correct_count} | 错误: {self.wrong_count}\n"
+                f"📝 错题数: {len(self.wrong_answers)}\n\n"
+                f"🎯 继续从第 {self.current_index + 1} 题开始学习吧！"
+            )
+            self.ai_result_text.insert(tk.END, f"\n{'='*75}\n{info_text}\n{'='*75}\n\n")
+            self.ai_result_text.see(tk.END)
+            messagebox.showinfo("成功", info_text)
+
+        except json.JSONDecodeError:
+            messagebox.showerror("错误", "进度文件格式错误，不是有效的 JSON 文件！")
+        except Exception as e:
+            messagebox.showerror("错误", f"读取进度失败:\n{str(e)}")
+
     def display_current_question(self):
         if self.current_index < len(self.current_csv_data):
             row = self.current_csv_data[self.current_index]
@@ -1257,7 +1383,7 @@ class CSVLearningApp:
             messagebox.showinfo("提示", "没有错题可导出！")
             return
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         default_filename = f"wrong_answers_round{self.current_round}_{timestamp}.csv"
 
         save_path = filedialog.asksaveasfilename(
