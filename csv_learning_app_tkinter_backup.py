@@ -2,15 +2,11 @@ import csv
 import os
 import datetime
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, scrolledtext
 import difflib
 import re
 import json
 import threading
-import customtkinter as ctk
-
-ctk.set_appearance_mode("dark")
-ctk.set_default_color_theme("blue")
 
 
 def strip_parentheses(s, assistant=None):
@@ -525,21 +521,6 @@ class OllamaAILearningAssistant:
             raise Exception(f"百度API调用失败: {str(e)}")
 
 
-def ctk_group(parent, title, padding=15):
-    frame = ctk.CTkFrame(parent)
-    frame.grid_propagate(True)
-    lbl = ctk.CTkLabel(
-        frame,
-        text=title,
-        font=ctk.CTkFont(family='Microsoft YaHei UI', size=13, weight='bold'),
-        anchor="w"
-    )
-    lbl.pack(fill="x", padx=padding, pady=(padding, 5))
-    inner = ctk.CTkFrame(frame, fg_color="transparent")
-    inner.pack(fill="both", expand=True, padx=padding, pady=(0, padding))
-    return frame, inner
-
-
 class CSVLearningApp:
     def __init__(self, root):
         self.root = root
@@ -556,7 +537,7 @@ class CSVLearningApp:
         self.csv_file_path = None
         self.ai_assistant = OllamaAILearningAssistant()
         self.processing = False
-        self.paren_switch_main = None
+        self.paren_check_main = None
         self.clean_paren_var_main = None
 
         self.setup_ui()
@@ -573,23 +554,26 @@ class CSVLearningApp:
         self._update_paren_tooltip()
 
     def _sync_paren_style_from_state(self, enabled):
-        if not self.paren_switch_main:
+        if not self.paren_check_main:
             return
         try:
-            color = "#2ecc71" if enabled else "#95a5a6"
-            self.paren_switch_main.configure(button_color=color, button_hover_color=color)
+            style = ttk.Style()
+            style.configure('ParenOn.TCheckbutton', foreground='green')
+            style.configure('ParenOff.TCheckbutton', foreground='gray')
+            stname = 'ParenOn.TCheckbutton' if enabled else 'ParenOff.TCheckbutton'
+            self.paren_check_main.config(style=stname)
         except Exception:
             pass
 
     def _update_paren_tooltip(self):
-        if not self.paren_switch_main:
+        if not self.paren_check_main:
             return
         enabled = self.clean_paren_var_main.get() if self.clean_paren_var_main else True
         if enabled:
-            tip = "🧹 已开启：苹果（复数） → 苹果"
+            tip = "🧹 已开启：苹果（复数） → 苹果（括号备注不参与判定）"
         else:
-            tip = "📝 已关闭：括号原样参与判定"
-        self.paren_switch_main.configure(text=tip)
+            tip = "📝 已关闭：苹果（复数）原样参与判定（可能导致AI误判）"
+        self.paren_check_main.config(text=tip)
         self._sync_paren_style_from_state(enabled)
 
     def _sync_paren_ui_from_config(self):
@@ -605,19 +589,22 @@ class CSVLearningApp:
         self.root.geometry(size)
 
     def setup_ui(self):
-        main_frame = ctk.CTkFrame(self.root, fg_color="transparent")
-        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=10, pady=10)
+        main_frame = ttk.Frame(self.root, padding="10")
+        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
 
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
-        main_frame.columnconfigure(0, weight=1)
+        main_frame.columnconfigure(1, weight=1)
+
+        notebook = ttk.Notebook(main_frame)
+        notebook.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
         main_frame.rowconfigure(0, weight=1)
 
-        notebook = ctk.CTkTabview(main_frame)
-        notebook.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
+        learning_tab = ttk.Frame(notebook, padding="10")
+        notebook.add(learning_tab, text="📚 学习模式")
 
-        learning_tab = notebook.add("📚 学习模式")
-        settings_tab = notebook.add("🤖 AI设置 (Ollama)")
+        settings_tab = ttk.Frame(notebook, padding="10")
+        notebook.add(settings_tab, text="🤖 AI设置 (Ollama)")
 
         self.setup_learning_tab(learning_tab)
         self.setup_settings_tab(settings_tab)
@@ -625,194 +612,183 @@ class CSVLearningApp:
         self.update_ai_status()
 
     def setup_learning_tab(self, parent):
-        parent.columnconfigure(0, weight=1)
+        file_frame = ttk.LabelFrame(parent, text="📁 文件操作", padding="5")
+        file_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
 
-        file_wrap, file_frame = ctk_group(parent, "📁 文件操作", padding=12)
-        file_wrap.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=5)
+        ttk.Button(file_frame, text="选择 CSV 文件", command=self.load_csv).grid(row=0, column=0, padx=3)
+        ttk.Button(file_frame, text="💾 保存进度", command=self.save_progress).grid(row=0, column=1, padx=3)
+        ttk.Button(file_frame, text="📂 读取进度", command=self.load_progress).grid(row=0, column=2, padx=3)
+        self.file_label = ttk.Label(file_frame, text="未选择文件", font=('Microsoft YaHei UI', 9), foreground='#555')
+        self.file_label.grid(row=0, column=3, padx=10, sticky=tk.W)
 
-        ctk.CTkButton(file_frame, text="选择 CSV 文件", command=self.load_csv, width=140).grid(row=0, column=0, padx=6, pady=5)
-        ctk.CTkButton(file_frame, text="💾 保存进度", command=self.save_progress, width=120, fg_color="#27ae60", hover_color="#219a52").grid(row=0, column=1, padx=6, pady=5)
-        ctk.CTkButton(file_frame, text="📂 读取进度", command=self.load_progress, width=120, fg_color="#2980b9", hover_color="#2471a3").grid(row=0, column=2, padx=6, pady=5)
-        self.file_label = ctk.CTkLabel(file_frame, text="未选择文件", font=ctk.CTkFont(family='Microsoft YaHei UI', size=12), text_color="#a0a0a0")
-        self.file_label.grid(row=0, column=3, padx=15, sticky=tk.W)
+        info_frame = ttk.LabelFrame(parent, text="📊 进度信息", padding="5")
+        info_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
 
-        info_wrap, info_frame = ctk_group(parent, "📊 进度信息", padding=12)
-        info_wrap.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=5)
-        for c in range(6):
-            info_frame.columnconfigure(c, weight=1)
+        self.round_label = ttk.Label(info_frame, text="轮次: 1", font=('Microsoft YaHei UI', 10, 'bold'))
+        self.round_label.grid(row=0, column=0, padx=10)
+        self.progress_label = ttk.Label(info_frame, text="进度: 0/0", font=('Microsoft YaHei UI', 10))
+        self.progress_label.grid(row=0, column=1, padx=10)
+        self.stats_label = ttk.Label(info_frame, text="正确: 0 | 错误: 0", font=('Microsoft YaHei UI', 10))
+        self.stats_label.grid(row=0, column=2, padx=10)
+        self.ai_status_label = ttk.Label(info_frame, text="🦙 AI: Ollama", font=('Microsoft YaHei UI', 10), foreground='green')
+        self.ai_status_label.grid(row=0, column=3, padx=10)
 
-        self.round_label = ctk.CTkLabel(info_frame, text="轮次: 1", font=ctk.CTkFont(family='Microsoft YaHei UI', size=13, weight='bold'))
-        self.round_label.grid(row=0, column=0, padx=8, pady=6)
-        self.progress_label = ctk.CTkLabel(info_frame, text="进度: 0/0", font=ctk.CTkFont(family='Microsoft YaHei UI', size=13))
-        self.progress_label.grid(row=0, column=1, padx=8, pady=6)
-        self.stats_label = ctk.CTkLabel(info_frame, text="正确: 0 | 错误: 0", font=ctk.CTkFont(family='Microsoft YaHei UI', size=13))
-        self.stats_label.grid(row=0, column=2, padx=8, pady=6)
-        self.ai_status_label = ctk.CTkLabel(info_frame, text="🦙 AI: Ollama", font=ctk.CTkFont(family='Microsoft YaHei UI', size=13), text_color="#2ecc71")
-        self.ai_status_label.grid(row=0, column=3, padx=8, pady=6)
-
-        self.clean_paren_var_main = ctk.BooleanVar(value=self.ai_assistant.clean_parentheses)
-        self.paren_switch_main = ctk.CTkSwitch(
+        self.clean_paren_var_main = tk.BooleanVar(value=self.ai_assistant.clean_parentheses)
+        self.paren_check_main = ttk.Checkbutton(
             info_frame,
             text="🧹 忽略括号备注",
             variable=self.clean_paren_var_main,
-            command=self._on_toggle_clean_paren,
-            font=ctk.CTkFont(family='Microsoft YaHei UI', size=12),
-            button_color="#2ecc71",
-            button_hover_color="#27ae60",
-            progress_color="#27ae60"
+            command=self._on_toggle_clean_paren
         )
-        self.paren_switch_main.grid(row=0, column=4, columnspan=2, padx=8, pady=6, sticky="w")
+        self.paren_check_main.grid(row=0, column=4, padx=10)
         self._update_paren_tooltip()
 
-        q_wrap, question_frame = ctk_group(parent, "❓ 当前题目", padding=18)
-        q_wrap.grid(row=2, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
+        question_frame = ttk.LabelFrame(parent, text="❓ 当前题目", padding="15")
+        question_frame.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
         parent.rowconfigure(2, weight=1)
-        question_frame.columnconfigure(1, weight=1)
 
-        self.col1_label = ctk.CTkLabel(question_frame, text="📝 单词:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=28, weight='bold'), text_color="#3498db")
-        self.col1_label.grid(row=0, column=0, sticky=tk.W, pady=10)
-        self.col1_value = ctk.CTkLabel(question_frame, text="-", font=ctk.CTkFont(family='Microsoft YaHei UI', size=40, weight='bold'), text_color="#5dade2", anchor="w", justify="left")
-        self.col1_value.grid(row=0, column=1, sticky=(tk.W, tk.E), pady=10, padx=12)
+        self.col1_label = ttk.Label(question_frame, text="📝 单词:", font=('Microsoft YaHei UI', 12, 'bold'), foreground='#2E86AB')
+        self.col1_label.grid(row=0, column=0, sticky=tk.W, pady=8)
+        self.col1_value = ttk.Label(question_frame, text="-", font=('Microsoft YaHei UI', 16, 'bold'), wraplength=600, foreground='#1A5276')
+        self.col1_value.grid(row=0, column=1, sticky=tk.W, pady=8, padx=10)
 
-        self.col2_label = ctk.CTkLabel(question_frame, text="🏷️ 词性:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=28, weight='bold'), text_color="#e74c3c")
-        self.col2_label.grid(row=1, column=0, sticky=tk.W, pady=10)
-        self.col2_value = ctk.CTkLabel(question_frame, text="-", font=ctk.CTkFont(family='Microsoft YaHei UI', size=32, slant='italic'), text_color="#ec7063", anchor="w", justify="left")
-        self.col2_value.grid(row=1, column=1, sticky=(tk.W, tk.E), pady=10, padx=12)
+        self.col2_label = ttk.Label(question_frame, text="🏷️ 词性:", font=('Microsoft YaHei UI', 12, 'bold'), foreground='#E74C3C')
+        self.col2_label.grid(row=1, column=0, sticky=tk.W, pady=8)
+        self.col2_value = ttk.Label(question_frame, text="-", font=('Microsoft YaHei UI', 14, 'italic'), wraplength=600, foreground='#C0392B')
+        self.col2_value.grid(row=1, column=1, sticky=tk.W, pady=8, padx=10)
 
-        a_wrap, answer_frame = ctk_group(parent, "✍️ 你的答案 (第三列)", padding=15)
-        a_wrap.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=5)
-        answer_frame.columnconfigure(0, weight=1)
+        answer_frame = ttk.LabelFrame(parent, text="✍️ 你的答案 (第三列)", padding="15")
+        answer_frame.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
 
-        self.answer_entry = ctk.CTkEntry(answer_frame, font=ctk.CTkFont(family='Microsoft YaHei UI', size=14), height=40, placeholder_text="请输入你的答案...")
+        self.answer_entry = ttk.Entry(answer_frame, font=('Microsoft YaHei UI', 12), width=80)
         self.answer_entry.grid(row=0, column=0, padx=5, pady=5, sticky=(tk.W, tk.E))
+        answer_frame.columnconfigure(0, weight=1)
         self.answer_entry.bind('<Return>', lambda e: self.submit_answer())
 
-        button_frame = ctk.CTkFrame(parent, fg_color="transparent")
-        button_frame.grid(row=4, column=0, pady=12)
+        button_frame = ttk.Frame(parent)
+        button_frame.grid(row=4, column=0, columnspan=2, pady=10)
 
-        submit_btn = ctk.CTkButton(button_frame, text="✅ 提交答案", command=self.submit_answer, width=130, height=38, font=ctk.CTkFont(family='Microsoft YaHei UI', size=13, weight='bold'), fg_color="#27ae60", hover_color="#219a52")
+        style = ttk.Style()
+        style.configure('Submit.TButton', font=('Microsoft YaHei UI', 10, 'bold'))
+
+        submit_btn = ttk.Button(button_frame, text="✅ 提交答案", command=self.submit_answer, style='Submit.TButton')
         submit_btn.grid(row=0, column=0, padx=8, pady=5)
 
-        ctk.CTkButton(button_frame, text="⏭️ 跳过此题", command=self.skip_question, width=120, height=38, fg_color="#f39c12", hover_color="#d68910").grid(row=0, column=1, padx=8, pady=5)
-        ctk.CTkButton(button_frame, text="💡 查看答案", command=self.show_answer, width=120, height=38, fg_color="#8e44ad", hover_color="#7d3c98").grid(row=0, column=2, padx=8, pady=5)
-        ctk.CTkButton(button_frame, text="➡️ 下一题", command=self.next_question, width=120, height=38, fg_color="#2980b9", hover_color="#2471a3").grid(row=0, column=3, padx=8, pady=5)
+        ttk.Button(button_frame, text="⏭️ 跳过此题", command=self.skip_question).grid(row=0, column=1, padx=8, pady=5)
+        ttk.Button(button_frame, text="💡 查看答案", command=self.show_answer).grid(row=0, column=2, padx=8, pady=5)
+        ttk.Button(button_frame, text="➡️ 下一题", command=self.next_question).grid(row=0, column=3, padx=8, pady=5)
 
-        ai_wrap, ai_frame = ctk_group(parent, "🦙 AI 判定结果 (本地智能分析)", padding=12)
-        ai_wrap.grid(row=5, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
-        parent.rowconfigure(5, weight=3)
+        ai_frame = ttk.LabelFrame(parent, text="🦙 AI 判定结果 (Ollama 本地智能分析)", padding="10")
+        ai_frame.grid(row=5, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
+        parent.rowconfigure(5, weight=2)
+
+        self.ai_result_text = scrolledtext.ScrolledText(ai_frame, height=12, width=100, font=('Consolas', 10))
+        self.ai_result_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         ai_frame.columnconfigure(0, weight=1)
         ai_frame.rowconfigure(0, weight=1)
+        manual_judge_frame = ttk.Frame(ai_frame)
+        manual_judge_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=5)
 
-        self.ai_result_text = ctk.CTkTextbox(ai_frame, height=200, font=ctk.CTkFont(family='Consolas', size=12))
-        self.ai_result_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        self.btn_mark_correct = ttk.Button(manual_judge_frame, text="✅ 标记为正确", command=self.mark_as_correct)
+        self.btn_mark_correct.pack(side=tk.LEFT, padx=5)
 
-        manual_judge_frame = ctk.CTkFrame(ai_frame, fg_color="transparent")
-        manual_judge_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=8)
-
-        self.btn_mark_correct = ctk.CTkButton(manual_judge_frame, text="✅ 标记为正确", command=self.mark_as_correct, width=150, fg_color="#27ae60", hover_color="#219a52")
-        self.btn_mark_correct.pack(side=tk.LEFT, padx=6)
-
-        self.btn_mark_wrong = ctk.CTkButton(manual_judge_frame, text="❌ 标记为错误", command=self.mark_as_wrong, width=150, fg_color="#c0392b", hover_color="#a93226")
-        self.btn_mark_wrong.pack(side=tk.LEFT, padx=6)
+        self.btn_mark_wrong = ttk.Button(manual_judge_frame, text="❌ 标记为错误", command=self.mark_as_wrong)
+        self.btn_mark_wrong.pack(side=tk.LEFT, padx=5)
 
         self.last_judgment_info = None
 
-        act_wrap, action_frame = ctk_group(parent, "🎯 操作面板", padding=12)
-        act_wrap.grid(row=6, column=0, sticky=(tk.W, tk.E), pady=5)
+        action_frame = ttk.LabelFrame(parent, text="🎯 操作面板", padding="8")
+        action_frame.grid(row=6, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
 
-        ctk.CTkButton(action_frame, text="🔄 开始新一轮复习", command=self.start_new_round, width=160, fg_color="#8e44ad", hover_color="#7d3c98").grid(row=0, column=0, padx=8, pady=6)
-        ctk.CTkButton(action_frame, text="📥 导出错题本", command=self.export_wrong_answers, width=140, fg_color="#e67e22", hover_color="#ca6f1e").grid(row=0, column=1, padx=8, pady=6)
-        ctk.CTkButton(action_frame, text="📤 导出AI判定日志", command=self.export_ai_logs, width=160, fg_color="#16a085", hover_color="#138d75").grid(row=0, column=2, padx=8, pady=6)
-        ctk.CTkButton(action_frame, text="🗑️ 重置", command=self.reset_app, width=100, fg_color="#95a5a6", hover_color="#7f8c8d").grid(row=0, column=3, padx=8, pady=6)
+        ttk.Button(action_frame, text="🔄 开始新一轮复习", command=self.start_new_round).grid(row=0, column=0, padx=6)
+        ttk.Button(action_frame, text="📥 导出错题本", command=self.export_wrong_answers).grid(row=0, column=1, padx=6)
+        ttk.Button(action_frame, text="📤 导出AI判定日志", command=self.export_ai_logs).grid(row=0, column=2, padx=6)
+        ttk.Button(action_frame, text="🗑️ 重置", command=self.reset_app).grid(row=0, column=3, padx=6)
 
     def setup_settings_tab(self, parent):
+        provider_frame = ttk.LabelFrame(parent, text="🌐 选择AI服务商", padding="15")
+        provider_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=10, padx=10)
         parent.columnconfigure(0, weight=1)
-
-        p_wrap, provider_frame = ctk_group(parent, "🌐 选择AI服务商", padding=15)
-        p_wrap.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=8, padx=8)
-        provider_frame.columnconfigure(1, weight=1)
 
         providers = self.ai_assistant.get_available_providers()
 
-        ctk.CTkLabel(provider_frame, text="AI提供商:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=13, weight='bold')).grid(row=0, column=0, sticky=tk.W, pady=6)
+        ttk.Label(provider_frame, text="AI提供商:", font=('Microsoft YaHei UI', 10, 'bold')).grid(row=0, column=0, sticky=tk.W, pady=5)
         
-        self.provider_combo = ctk.CTkComboBox(provider_frame, values=list(providers.keys()), width=420, state='readonly', font=ctk.CTkFont(size=12))
-        self.provider_combo.grid(row=0, column=1, padx=10, pady=6, sticky=(tk.W, tk.E))
+        self.provider_combo = ttk.Combobox(provider_frame, values=list(providers.keys()), width=45, state='readonly')
+        self.provider_combo.grid(row=0, column=1, padx=10, pady=5, sticky=(tk.W, tk.E))
         self.provider_combo.set(self.ai_assistant.ai_provider)
-        self.provider_combo.configure(command=self.on_provider_change)
+        self.provider_combo.bind('<<ComboboxSelected>>', self.on_provider_change)
 
-        self.provider_desc = ctk.CTkLabel(provider_frame, text="", font=ctk.CTkFont(family='Microsoft YaHei UI', size=11), text_color="#3498db", anchor="w", justify="left")
-        self.provider_desc.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=4)
+        self.provider_desc = ttk.Label(provider_frame, text="", font=('Microsoft YaHei UI', 9), foreground='blue')
+        self.provider_desc.grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=2)
         self.update_provider_description()
 
-        o_wrap, ollama_frame = ctk_group(parent, "🦙 Ollama 配置 (推荐)", padding=15)
-        o_wrap.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=8, padx=8)
-        ollama_frame.columnconfigure(1, weight=1)
+        ollama_frame = ttk.LabelFrame(parent, text="🦙 Ollama 配置 (推荐)", padding="15")
+        ollama_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=10, padx=10)
 
-        ctk.CTkLabel(ollama_frame, text="Ollama服务地址:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=12)).grid(row=0, column=0, sticky=tk.W, pady=6)
-        self.ollama_url_entry = ctk.CTkEntry(ollama_frame, width=420, height=36, font=ctk.CTkFont(size=12))
-        self.ollama_url_entry.grid(row=0, column=1, padx=10, pady=6, sticky=(tk.W, tk.E))
+        ttk.Label(ollama_frame, text="Ollama服务地址:", font=('Microsoft YaHei UI', 10)).grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.ollama_url_entry = ttk.Entry(ollama_frame, width=55)
+        self.ollama_url_entry.grid(row=0, column=1, padx=10, pady=5, sticky=(tk.W, tk.E))
         self.ollama_url_entry.insert(0, self.ai_assistant.ollama_base_url)
 
-        ctk.CTkButton(ollama_frame, text="检测连接", command=self.check_ollama_connection, width=110, fg_color="#16a085", hover_color="#138d75").grid(row=0, column=2, padx=5)
+        ttk.Button(ollama_frame, text="检测连接", command=self.check_ollama_connection).grid(row=0, column=2, padx=5)
         
-        self.ollama_status_label = ctk.CTkLabel(ollama_frame, text="状态: 未检测", font=ctk.CTkFont(family='Microsoft YaHei UI', size=11), anchor="w")
-        self.ollama_status_label.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=3)
+        self.ollama_status_label = ttk.Label(ollama_frame, text="状态: 未检测", font=('Microsoft YaHei UI', 9))
+        self.ollama_status_label.grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=2)
 
-        ctk.CTkLabel(ollama_frame, text="选择模型:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=12)).grid(row=2, column=0, sticky=tk.W, pady=6)
+        ttk.Label(ollama_frame, text="选择模型:", font=('Microsoft YaHei UI', 10)).grid(row=2, column=0, sticky=tk.W, pady=5)
         
-        self.model_combo = ctk.CTkComboBox(ollama_frame, values=[], width=420, height=36, font=ctk.CTkFont(size=12))
-        self.model_combo.grid(row=2, column=1, columnspan=2, padx=10, pady=6, sticky=(tk.W, tk.E))
+        self.model_combo = ttk.Combobox(ollama_frame, values=[], width=52)
+        self.model_combo.grid(row=2, column=1, padx=10, pady=5, sticky=(tk.W, tk.E), columnspan=2)
         
-        ctk.CTkButton(ollama_frame, text="刷新模型列表", command=self.refresh_ollama_models, fg_color="#2980b9", hover_color="#2471a3").grid(row=3, column=0, columnspan=3, pady=8)
+        ttk.Button(ollama_frame, text="刷新模型列表", command=self.refresh_ollama_models).grid(row=3, column=0, columnspan=3, pady=5)
 
         self.update_model_list()
 
-        api_wrap, other_api_frame = ctk_group(parent, "🔑 其他AI API密钥 (可选)", padding=15)
-        api_wrap.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=8, padx=8)
-        other_api_frame.columnconfigure(1, weight=1)
+        other_api_frame = ttk.LabelFrame(parent, text="🔑 其他AI API密钥 (可选)", padding="15")
+        other_api_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=10, padx=10)
 
-        ctk.CTkLabel(other_api_frame, text="API Key:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=12)).grid(row=0, column=0, sticky=tk.W, pady=6)
-        self.api_key_entry = ctk.CTkEntry(other_api_frame, width=420, height=36, show="•", font=ctk.CTkFont(size=12))
-        self.api_key_entry.grid(row=0, column=1, padx=10, pady=6, sticky=(tk.W, tk.E))
+        ttk.Label(other_api_frame, text="API Key:", font=('Microsoft YaHei UI', 10)).grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.api_key_entry = ttk.Entry(other_api_frame, width=55, show="*")
+        self.api_key_entry.grid(row=0, column=1, padx=10, pady=5, sticky=(tk.W, tk.E))
         if self.ai_assistant.api_key:
             self.api_key_entry.insert(0, self.ai_assistant.api_key)
 
-        self.use_ai_var = ctk.BooleanVar(value=self.ai_assistant.use_ai)
-        ai_check = ctk.CTkSwitch(other_api_frame, text="启用AI智能判定", variable=self.use_ai_var, font=ctk.CTkFont(size=12))
-        ai_check.grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=(12, 6), padx=2)
+        self.use_ai_var = tk.BooleanVar(value=self.ai_assistant.use_ai)
+        ai_check = ttk.Checkbutton(other_api_frame, text="启用AI智能判定", variable=self.use_ai_var)
+        ai_check.grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=(10, 0))
 
-        self.clean_paren_var = ctk.BooleanVar(value=self.ai_assistant.clean_parentheses)
-        paren_check = ctk.CTkSwitch(other_api_frame, text="自动忽略括号说明（推荐开启）\n例：苹果（复数） 等价于 苹果；防止括号内容干扰AI判定", variable=self.clean_paren_var, font=ctk.CTkFont(size=12))
-        paren_check.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=6, padx=2)
+        self.clean_paren_var = tk.BooleanVar(value=self.ai_assistant.clean_parentheses)
+        paren_check = ttk.Checkbutton(other_api_frame, text="自动忽略括号说明（推荐开启）\n例：苹果（复数） 等价于 苹果；防止括号内容干扰AI判定", variable=self.clean_paren_var)
+        paren_check.grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=(5, 5))
 
-        ctk.CTkButton(other_api_frame, text="💾 保存所有设置", command=self.save_ai_settings, height=40, font=ctk.CTkFont(size=13, weight='bold'), fg_color="#27ae60", hover_color="#219a52").grid(row=3, column=0, columnspan=2, pady=15)
+        ttk.Button(other_api_frame, text="💾 保存所有设置", command=self.save_ai_settings).grid(row=3, column=0, columnspan=2, pady=10)
 
-        i_wrap, install_frame = ctk_group(parent, "📦 安装依赖库", padding=15)
-        i_wrap.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=8, padx=8)
+        install_frame = ttk.LabelFrame(parent, text="📦 安装依赖库", padding="15")
+        install_frame.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=10, padx=10)
 
         status_text = f"Ollama Python库: {'✅ 已安装' if HAS_OLLAMA else '❌ 未安装'}\n"
         status_text += f"通义千问(dashscope): {'✅ 已安装' if HAS_DASHSCOPE else '❌ 未安装'}\n"
         status_text += f"智谱AI(zhipuai): {'✅ 已安装' if HAS_ZHIPU else '❌ 未安装'}\n"
         status_text += f"OpenAI: {'✅ 已安装' if HAS_OPENAI else '❌ 未安装'}"
 
-        self.install_status = ctk.CTkLabel(install_frame, text=status_text, font=ctk.CTkFont(family='Consolas', size=12), anchor="w", justify="left")
-        self.install_status.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=6)
+        self.install_status = ttk.Label(install_frame, text=status_text, font=('Consolas', 9))
+        self.install_status.grid(row=0, column=0, sticky=tk.W, pady=5)
 
-        btn_frame = ctk.CTkFrame(install_frame, fg_color="transparent")
-        btn_frame.grid(row=1, column=0, sticky=tk.W, pady=6)
+        btn_frame = ttk.Frame(install_frame)
+        btn_frame.grid(row=1, column=0, sticky=tk.W, pady=5)
 
         if not HAS_OLLAMA:
-            ctk.CTkButton(btn_frame, text="安装Ollama库", command=lambda: self.install_package('ollama'), width=140).grid(row=0, column=0, padx=5)
+            ttk.Button(btn_frame, text="安装Ollama库", command=lambda: self.install_package('ollama')).grid(row=0, column=0, padx=5)
         
         if not HAS_DASHSCOPE:
-            ctk.CTkButton(btn_frame, text="安装通义千问", command=lambda: self.install_package('dashscope'), width=140, fg_color="#f39c12", hover_color="#d68910").grid(row=0, column=1, padx=5)
+            ttk.Button(btn_frame, text="安装通义千问", command=lambda: self.install_package('dashscope')).grid(row=0, column=1, padx=5)
         
         if not HAS_ZHIPU:
-            ctk.CTkButton(btn_frame, text="安装智谱AI", command=lambda: self.install_package('zhipuai'), width=140, fg_color="#9b59b6", hover_color="#8e44ad").grid(row=0, column=2, padx=5)
+            ttk.Button(btn_frame, text="安装智谱AI", command=lambda: self.install_package('zhipuai')).grid(row=0, column=2, padx=5)
         
         if not HAS_OPENAI:
-            ctk.CTkButton(btn_frame, text="安装OpenAI", command=lambda: self.install_package('openai'), width=140, fg_color="#3498db", hover_color="#2980b9").grid(row=0, column=3, padx=5)
+            ttk.Button(btn_frame, text="安装OpenAI", command=lambda: self.install_package('openai')).grid(row=0, column=3, padx=5)
 
         usage_info = """
 🦙 Ollama 使用指南:
@@ -837,10 +813,10 @@ class CSVLearningApp:
 
 💡 其他提供商需要API Key和联网！
 """
-        usage_label = ctk.CTkLabel(install_frame, text=usage_info, font=ctk.CTkFont(family='Consolas', size=11), justify=tk.LEFT, anchor="w", text_color="#bdc3c7")
-        usage_label.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=12)
+        usage_label = ttk.Label(install_frame, text=usage_info, font=('Consolas', 9), justify=tk.LEFT)
+        usage_label.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=10)
 
-    def on_provider_change(self, *args):
+    def on_provider_change(self, event=None):
         self.update_provider_description()
         self.update_model_list()
 
@@ -850,7 +826,7 @@ class CSVLearningApp:
         if provider in providers:
             desc = providers[provider].get('desc', '')
             name = providers[provider].get('name', provider)
-            self.provider_desc.configure(text=f"📍 {name} - {desc}")
+            self.provider_desc.config(text=f"📍 {name} - {desc}")
 
     def update_model_list(self):
         providers = self.ai_assistant.get_available_providers()
@@ -858,7 +834,7 @@ class CSVLearningApp:
         
         if provider in providers:
             models = providers[provider].get('models', [])
-            self.model_combo.configure(values=models)
+            self.model_combo['values'] = models
             if models:
                 default_model = ''
                 if provider == 'ollama':
@@ -874,19 +850,19 @@ class CSVLearningApp:
         url = self.ollama_url_entry.get().strip() or 'http://localhost:11434'
         self.ai_assistant.set_ollama_base_url(url)
         
-        self.ollama_status_label.configure(text="状态: 检测中...", text_color="#f39c12")
+        self.ollama_status_label.config(text="状态: 检测中...", foreground='orange')
         self.root.update()
         
         if self.ai_assistant.check_ollama_running():
-            self.ollama_status_label.configure(text=f"状态: ✅ 已连接 ({url})", text_color="#2ecc71")
+            self.ollama_status_label.config(text=f"状态: ✅ 已连接 ({url})", foreground='green')
             self.refresh_ollama_models()
         else:
-            self.ollama_status_label.configure(text=f"状态: ❌ 无法连接 ({url})", text_color="#e74c3c")
+            self.ollama_status_label.config(text=f"状态: ❌ 无法连接 ({url})", foreground='red')
 
     def refresh_ollama_models(self):
         models = self.ai_assistant.get_ollama_models()
         if models:
-            self.model_combo.configure(values=sorted(models))
+            self.model_combo['values'] = sorted(models)
             if not self.model_combo.get() or self.model_combo.get() not in models:
                 default = 'qwen2.5:7b' if 'qwen2.5:7b' in models else models[0]
                 self.model_combo.set(default)
@@ -894,9 +870,9 @@ class CSVLearningApp:
             providers = self.ai_assistant.get_available_providers()
             providers['ollama']['models'] = sorted(models)
             
-            self.ollama_status_label.configure(text=f"状态: ✅ 已连接 - 找到 {len(models)} 个模型", text_color="#2ecc71")
+            self.ollama_status_label.config(text=f"状态: ✅ 已连接 - 找到 {len(models)} 个模型", foreground='green')
         else:
-            self.ollama_status_label.configure(text="状态: ⚠️ 已连接但未找到模型，请先下载模型", text_color="#f39c12")
+            self.ollama_status_label.config(text="状态: ⚠️ 已连接但未找到模型，请先下载模型", foreground='orange')
 
     def save_ai_settings(self):
         ollama_url = self.ollama_url_entry.get().strip()
@@ -932,43 +908,35 @@ class CSVLearningApp:
         provider = self.ai_assistant.ai_provider
         
         if not self.ai_assistant.use_ai:
-            self.ai_status_label.configure(text="AI: 已禁用", text_color="#95a5a6")
+            self.ai_status_label.config(text="AI: 已禁用", foreground='gray')
         elif provider == 'ollama':
             if self.ai_assistant.check_ollama_running():
                 model_info = f" ({self.ai_assistant.model})" if self.ai_assistant.model else ""
-                self.ai_status_label.configure(text=f"🦙 Ollama{model_info}", text_color="#2ecc71")
+                self.ai_status_label.config(text=f"🦙 Ollama{model_info}", foreground='green')
             else:
-                self.ai_status_label.configure(text="🦙 Ollama (未连接)", text_color="#f39c12")
+                self.ai_status_label.config(text="🦙 Ollama (未连接)", foreground='orange')
         elif provider == 'local':
-            self.ai_status_label.configure(text="AI: 本地算法", text_color="#95a5a6")
+            self.ai_status_label.config(text="AI: 本地算法", foreground='gray')
         elif provider in providers:
             name = providers[provider].get('name', provider)
             model_info = f" ({self.ai_assistant.model})" if self.ai_assistant.model else ""
-            self.ai_status_label.configure(text=f"AI: {name}{model_info}", text_color="#2ecc71")
+            self.ai_status_label.config(text=f"AI: {name}{model_info}", foreground='green')
         else:
-            self.ai_status_label.configure(text="AI: 未知", text_color="#f39c12")
+            self.ai_status_label.config(text="AI: 未知", foreground='orange')
 
     def install_package(self, package_name):
-        def _install():
-            try:
-                result = subprocess.run(
-                    [sys.executable, "-m", "pip", "install", package_name],
-                    capture_output=True,
-                    text=True,
-                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-                )
-                self.root.after(0, lambda: self._show_install_result(package_name, result))
-            except Exception as e:
-                self.root.after(0, lambda: messagebox.showerror("错误", f"安装过程出错:\n{str(e)}"))
-
-        thread = threading.Thread(target=_install, daemon=True)
-        thread.start()
-
-    def _show_install_result(self, package_name, result):
-        if result.returncode == 0:
-            messagebox.showinfo("成功", f"{package_name} 库安装成功！\n请重启程序以使用该功能。")
-        else:
-            messagebox.showerror("错误", f"安装失败:\n{result.stderr}")
+        try:
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", package_name],
+                capture_output=True,
+                text=True
+            )
+            if result.returncode == 0:
+                messagebox.showinfo("成功", f"{package_name} 库安装成功！\n请重启程序以使用该功能。")
+            else:
+                messagebox.showerror("错误", f"安装失败:\n{result.stderr}")
+        except Exception as e:
+            messagebox.showerror("错误", f"安装过程出错:\n{str(e)}")
 
     def load_csv(self):
         file_path = filedialog.askopenfilename(
@@ -989,7 +957,7 @@ class CSVLearningApp:
                     return
 
                 self.csv_file_path = file_path
-                self.file_label.configure(text=os.path.basename(file_path))
+                self.file_label.config(text=os.path.basename(file_path))
                 self.current_index = 0
                 self.wrong_answers = []
                 self.current_round = 1
@@ -1120,7 +1088,7 @@ class CSVLearningApp:
                 return
 
             self.csv_file_path = csv_path
-            self.file_label.configure(text=os.path.basename(csv_path))
+            self.file_label.config(text=os.path.basename(csv_path))
             self.total_questions = len(self.current_csv_data)
             self.current_index = min(int(data.get("current_index", 0)), self.total_questions - 1)
             self.current_round = int(data.get("current_round", 1))
@@ -1158,8 +1126,8 @@ class CSVLearningApp:
     def display_current_question(self):
         if self.current_index < len(self.current_csv_data):
             row = self.current_csv_data[self.current_index]
-            self.col1_value.configure(text=row[0] if len(row) > 0 else "-")
-            self.col2_value.configure(text=row[1] if len(row) > 1 else "-")
+            self.col1_value.config(text=row[0] if len(row) > 0 else "-")
+            self.col2_value.config(text=row[1] if len(row) > 1 else "-")
             self.answer_entry.delete(0, tk.END)
             self.answer_entry.focus_set()
             self.update_progress()
@@ -1167,9 +1135,9 @@ class CSVLearningApp:
             self.finish_round()
 
     def update_progress(self):
-        self.round_label.configure(text=f"轮次: {self.current_round}")
-        self.progress_label.configure(text=f"进度: {self.current_index + 1}/{len(self.current_csv_data)}")
-        self.stats_label.configure(text=f"正确: {self.correct_count} | 错误: {self.wrong_count}")
+        self.round_label.config(text=f"轮次: {self.current_round}")
+        self.progress_label.config(text=f"进度: {self.current_index + 1}/{len(self.current_csv_data)}")
+        self.stats_label.config(text=f"正确: {self.correct_count} | 错误: {self.wrong_count}")
 
     def submit_answer(self):
         if self.processing:
@@ -1440,8 +1408,8 @@ class CSVLearningApp:
         self.ai_result_text.insert(tk.END, result_text)
         self.ai_result_text.see(tk.END)
 
-        self.col1_value.configure(text="🎊 本轮完成!")
-        self.col2_value.configure(text="")
+        self.col1_value.config(text="🎊 本轮完成!")
+        self.col2_value.config(text="")
         self.answer_entry.delete(0, tk.END)
 
     def start_new_round(self):
@@ -1560,9 +1528,9 @@ class CSVLearningApp:
         self.wrong_count = 0
         self.csv_file_path = None
 
-        self.file_label.configure(text="未选择文件")
-        self.col1_value.configure(text="-")
-        self.col2_value.configure(text="-")
+        self.file_label.config(text="未选择文件")
+        self.col1_value.config(text="-")
+        self.col2_value.config(text="-")
         self.answer_entry.delete(0, tk.END)
         self.ai_result_text.delete(1.0, tk.END)
         self.update_progress()
@@ -1572,7 +1540,11 @@ class CSVLearningApp:
 import sys
 
 def main():
-    root = ctk.CTk()
+    root = tk.Tk()
+    
+    style = ttk.Style()
+    style.theme_use('clam')
+    
     app = CSVLearningApp(root)
     root.mainloop()
 
