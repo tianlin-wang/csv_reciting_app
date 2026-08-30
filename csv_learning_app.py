@@ -9,9 +9,11 @@ import json
 import threading
 
 
-def strip_parentheses(s):
+def strip_parentheses(s, assistant=None):
     if not s:
         return s
+    if assistant is not None and not getattr(assistant, 'clean_parentheses', True):
+        return str(s).strip()
     s = str(s)
     prev = None
     while prev != s:
@@ -25,13 +27,16 @@ def strip_parentheses(s):
     return s.strip()
 
 
-def clean_answer_string(s):
+def clean_answer_string(s, assistant=None):
     if not s:
         return s
+    if assistant is not None and not getattr(assistant, 'clean_parentheses', True):
+        parts = split_answers(s)
+        return ';'.join(p.strip() for p in parts) if parts else str(s).strip()
     parts = split_answers(s)
     cleaned_parts = []
     for p in parts:
-        cp = strip_parentheses(p).strip()
+        cp = strip_parentheses(p, assistant).strip()
         if cp:
             cleaned_parts.append(cp)
     return ';'.join(cleaned_parts) if cleaned_parts else str(s).strip()
@@ -74,6 +79,7 @@ class OllamaAILearningAssistant:
         self.ai_provider = "ollama"
         self.model = ""
         self.use_ai = True
+        self.clean_parentheses = True
         self.ollama_base_url = "http://localhost:11434"
         self.load_config()
 
@@ -87,6 +93,7 @@ class OllamaAILearningAssistant:
                     self.ai_provider = config.get('ai_provider', 'ollama')
                     self.model = config.get('model', '')
                     self.use_ai = config.get('use_ai', True)
+                    self.clean_parentheses = config.get('clean_parentheses', True)
                     self.ollama_base_url = config.get('ollama_base_url', 'http://localhost:11434')
             except:
                 pass
@@ -97,6 +104,7 @@ class OllamaAILearningAssistant:
             'ai_provider': self.ai_provider,
             'model': self.model,
             'use_ai': self.use_ai,
+            'clean_parentheses': self.clean_parentheses,
             'ollama_base_url': self.ollama_base_url
         }
         with open('ai_config.json', 'w', encoding='utf-8') as f:
@@ -116,6 +124,10 @@ class OllamaAILearningAssistant:
 
     def set_use_ai(self, use_ai):
         self.use_ai = use_ai
+        self.save_config()
+
+    def set_clean_parentheses(self, clean_parentheses):
+        self.clean_parentheses = clean_parentheses
         self.save_config()
 
     def set_ollama_base_url(self, url):
@@ -231,7 +243,7 @@ class OllamaAILearningAssistant:
             best_sim = 0.0
             best_ans = ''
             for a in possible:
-                ac = re.sub(r'\s+', '', strip_parentheses(a).lower())
+                ac = re.sub(r'\s+', '', strip_parentheses(a, self).lower())
                 if user_clean == ac:
                     best_sim = 1.0
                     best_ans = a
@@ -241,7 +253,7 @@ class OllamaAILearningAssistant:
                     best_sim = sim
                     best_ans = a
             is_correct = best_sim >= 0.85
-            clean_best = strip_parentheses(best_ans)
+            clean_best = strip_parentheses(best_ans, self)
             return {
                 'is_correct': is_correct,
                 'confidence': best_sim,
@@ -251,7 +263,7 @@ class OllamaAILearningAssistant:
             }
 
     def _get_prompt(self, user_answer, correct_answer, col1, col2):
-        clean_correct = clean_answer_string(correct_answer)
+        clean_correct = clean_answer_string(correct_answer, self)
         prompt = f'''判断词汇默写对错。
 正确只返回：正确，正确答案是：XXX
 错误只返回：错误，正确答案是：XXX
@@ -313,7 +325,7 @@ class OllamaAILearningAssistant:
                             possible = split_answers(correct_answer)
                             best_sim = 0.0
                             for a in possible:
-                                ac = re.sub(r'\s+', '', strip_parentheses(a).lower())
+                                ac = re.sub(r'\s+', '', strip_parentheses(a, self).lower())
                                 if uc == ac:
                                     best_sim = 1.0
                                     break
@@ -341,7 +353,7 @@ class OllamaAILearningAssistant:
                 user_clean = re.sub(r'\s+', '', str(user_answer).lower())
                 possible_answers = split_answers(correct_answer)
                 for ans in possible_answers:
-                    ans_clean = re.sub(r'\s+', '', strip_parentheses(ans).lower())
+                    ans_clean = re.sub(r'\s+', '', strip_parentheses(ans, self).lower())
                     if user_clean == ans_clean:
                         rj['is_correct'] = True
                         rj['confidence'] = 1.0
@@ -359,7 +371,7 @@ class OllamaAILearningAssistant:
                 user_clean = re.sub(r'\s+', '', str(user_answer).lower())
                 possible_answers = split_answers(correct_answer)
                 for ans in possible_answers:
-                    ans_clean = re.sub(r'\s+', '', strip_parentheses(ans).lower())
+                    ans_clean = re.sub(r'\s+', '', strip_parentheses(ans, self).lower())
                     if user_clean == ans_clean:
                         return {
                             'is_correct': True,
@@ -684,9 +696,13 @@ class CSVLearningApp:
 
         self.use_ai_var = tk.BooleanVar(value=self.ai_assistant.use_ai)
         ai_check = ttk.Checkbutton(other_api_frame, text="启用AI智能判定", variable=self.use_ai_var)
-        ai_check.grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=10)
+        ai_check.grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=(10, 0))
 
-        ttk.Button(other_api_frame, text="💾 保存所有设置", command=self.save_ai_settings).grid(row=2, column=0, columnspan=2, pady=10)
+        self.clean_paren_var = tk.BooleanVar(value=self.ai_assistant.clean_parentheses)
+        paren_check = ttk.Checkbutton(other_api_frame, text="自动忽略括号说明（推荐开启）\n例：苹果（复数） 等价于 苹果；防止括号内容干扰AI判定", variable=self.clean_paren_var)
+        paren_check.grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=(5, 5))
+
+        ttk.Button(other_api_frame, text="💾 保存所有设置", command=self.save_ai_settings).grid(row=3, column=0, columnspan=2, pady=10)
 
         install_frame = ttk.LabelFrame(parent, text="📦 安装依赖库", padding="15")
         install_frame.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=10, padx=10)
@@ -804,12 +820,14 @@ class CSVLearningApp:
         provider = self.provider_combo.get()
         model = self.model_combo.get()
         use_ai = self.use_ai_var.get()
+        clean_paren = self.clean_paren_var.get()
 
         self.ai_assistant.set_ollama_base_url(ollama_url)
         self.ai_assistant.set_api_key(api_key)
         self.ai_assistant.set_ai_provider(provider)
         self.ai_assistant.set_model(model)
         self.ai_assistant.set_use_ai(use_ai)
+        self.ai_assistant.set_clean_parentheses(clean_paren)
 
         self.update_ai_status()
 
@@ -821,7 +839,8 @@ class CSVLearningApp:
                            f"• Ollama地址: {ollama_url}\n" +
                            f"• 模型: {model}\n" +
                            f"• API Key: {'已设置' if api_key else '未设置'}\n" +
-                           f"• AI模式: {'已启用' if use_ai else '未启用'}")
+                           f"• AI模式: {'已启用' if use_ai else '未启用'}\n" +
+                           f"• 括号清理: {'已开启' if clean_paren else '已关闭'}")
 
     def update_ai_status(self):
         providers = self.ai_assistant.get_available_providers()
@@ -998,7 +1017,7 @@ class CSVLearningApp:
         best_match = ""
         
         for answer in possible_answers:
-            clean_answer = re.sub(r'\s+', '', strip_parentheses(answer).lower())
+            clean_answer = re.sub(r'\s+', '', strip_parentheses(answer, self.ai_assistant).lower())
             
             if user_clean == clean_answer:
                 return True, 1.0, f"✨ 完美！回答完全正确！"
@@ -1010,7 +1029,7 @@ class CSVLearningApp:
                 best_similarity = similarity
                 best_match = answer
         
-        clean_best_match = strip_parentheses(best_match)
+        clean_best_match = strip_parentheses(best_match, self.ai_assistant)
         if best_similarity >= 0.9:
             return True, best_similarity, f"✅ 基本正确！与标准答案\"{clean_best_match}\"高度相似（可能是同义词、不同表达或格式差异）"
         elif best_similarity >= 0.7:
@@ -1031,7 +1050,7 @@ class CSVLearningApp:
             possible_answers = split_answers(correct_answer)
             exact_match = False
             for ans in possible_answers:
-                if user_clean == _re.sub(r'\s+', '', strip_parentheses(ans).lower()):
+                if user_clean == _re.sub(r'\s+', '', strip_parentheses(ans, self.ai_assistant).lower()):
                     exact_match = True
                     break
 
@@ -1058,7 +1077,7 @@ class CSVLearningApp:
             else:
                 mode = "⚙️ 本地算法"
 
-            clean_correct_display = clean_answer_string(correct_answer)
+            clean_correct_display = clean_answer_string(correct_answer, self.ai_assistant)
             if is_correct:
                 result_text = f"\n{'='*80}\n📚 第{self.current_index+1}题 [{mode}]\n{'='*80}\n{col1} ({col2})\n你的答案: {user_answer}\n\n正确\n{'='*80}\n\n"
             else:
@@ -1094,7 +1113,7 @@ class CSVLearningApp:
     def show_answer(self):
         if self.current_csv_data and self.current_index < len(self.current_csv_data):
             correct_answer = self.current_csv_data[self.current_index][2] if len(self.current_csv_data[self.current_index]) > 2 else ""
-            clean_display = clean_answer_string(correct_answer)
+            clean_display = clean_answer_string(correct_answer, self.ai_assistant)
             result_text = f"\n💡 正确答案: {clean_display}\n"
             self.ai_result_text.insert(tk.END, result_text)
             self.ai_result_text.see(tk.END)
