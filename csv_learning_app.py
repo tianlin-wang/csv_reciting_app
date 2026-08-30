@@ -9,6 +9,34 @@ import json
 import threading
 
 
+def strip_parentheses(s):
+    if not s:
+        return s
+    s = str(s)
+    prev = None
+    while prev != s:
+        prev = s
+        s = re.sub(r'（[^（）]*）', '', s)
+        s = re.sub(r'\([^()]*\)', '', s)
+        s = re.sub(r'【[^【】]*】', '', s)
+        s = re.sub(r'\[[^\[\]]*\]', '', s)
+        s = re.sub(r'\{[^{}]*\}', '', s)
+        s = re.sub(r'<[^<>]*>', '', s)
+    return s.strip()
+
+
+def clean_answer_string(s):
+    if not s:
+        return s
+    parts = split_answers(s)
+    cleaned_parts = []
+    for p in parts:
+        cp = strip_parentheses(p).strip()
+        if cp:
+            cleaned_parts.append(cp)
+    return ';'.join(cleaned_parts) if cleaned_parts else str(s).strip()
+
+
 def split_answers(s):
     if not s:
         return []
@@ -199,11 +227,11 @@ class OllamaAILearningAssistant:
         except Exception as e:
             import difflib as _difflib
             user_clean = re.sub(r'\s+', '', str(user_answer).lower())
-            possible = [a.strip() for a in str(correct_answer).split(';')]
+            possible = split_answers(correct_answer)
             best_sim = 0.0
             best_ans = ''
             for a in possible:
-                ac = re.sub(r'\s+', '', a.lower())
+                ac = re.sub(r'\s+', '', strip_parentheses(a).lower())
                 if user_clean == ac:
                     best_sim = 1.0
                     best_ans = a
@@ -213,15 +241,17 @@ class OllamaAILearningAssistant:
                     best_sim = sim
                     best_ans = a
             is_correct = best_sim >= 0.85
+            clean_best = strip_parentheses(best_ans)
             return {
                 'is_correct': is_correct,
                 'confidence': best_sim,
                 'analysis': f'AI异常，本地判定{"✅对" if is_correct else "❌错"} (相似度{best_sim:.0%})',
-                'suggestions': f'标准答案：{best_ans}' if not is_correct else '',
+                'suggestions': f'标准答案：{clean_best}' if not is_correct else '',
                 'similarity_score': best_sim
             }
 
     def _get_prompt(self, user_answer, correct_answer, col1, col2):
+        clean_correct = clean_answer_string(correct_answer)
         prompt = f'''判断词汇默写对错。
 正确只返回：正确，正确答案是：XXX
 错误只返回：错误，正确答案是：XXX
@@ -234,7 +264,7 @@ class OllamaAILearningAssistant:
 标准: 橙子;柑橘 | 答: 橘子 → 正确，正确答案是：橙子;柑橘
 
 题目：{col1} ({col2})
-标准：{correct_answer}
+标准：{clean_correct}
 学生：{user_answer}
 返回：'''
         return prompt
@@ -280,10 +310,10 @@ class OllamaAILearningAssistant:
                         correct_answer = getattr(self, '_last_correct_answer', '')
                         if user_answer and correct_answer:
                             uc = re.sub(r'\s+', '', str(user_answer).lower())
-                            possible = [a.strip() for a in str(correct_answer).split(';')]
+                            possible = split_answers(correct_answer)
                             best_sim = 0.0
                             for a in possible:
-                                ac = re.sub(r'\s+', '', a.lower())
+                                ac = re.sub(r'\s+', '', strip_parentheses(a).lower())
                                 if uc == ac:
                                     best_sim = 1.0
                                     break
@@ -309,9 +339,9 @@ class OllamaAILearningAssistant:
 
             if user_answer and correct_answer:
                 user_clean = re.sub(r'\s+', '', str(user_answer).lower())
-                possible_answers = [ans.strip() for ans in str(correct_answer).split(';')]
+                possible_answers = split_answers(correct_answer)
                 for ans in possible_answers:
-                    ans_clean = re.sub(r'\s+', '', ans.lower())
+                    ans_clean = re.sub(r'\s+', '', strip_parentheses(ans).lower())
                     if user_clean == ans_clean:
                         rj['is_correct'] = True
                         rj['confidence'] = 1.0
@@ -327,9 +357,9 @@ class OllamaAILearningAssistant:
 
             if user_answer and correct_answer:
                 user_clean = re.sub(r'\s+', '', str(user_answer).lower())
-                possible_answers = [ans.strip() for ans in str(correct_answer).split(';')]
+                possible_answers = split_answers(correct_answer)
                 for ans in possible_answers:
-                    ans_clean = re.sub(r'\s+', '', ans.lower())
+                    ans_clean = re.sub(r'\s+', '', strip_parentheses(ans).lower())
                     if user_clean == ans_clean:
                         return {
                             'is_correct': True,
@@ -963,12 +993,12 @@ class CSVLearningApp:
     def local_judge(self, user_answer, correct_answer):
         user_clean = re.sub(r'\s+', '', user_answer.lower())
         
-        possible_answers = [ans.strip() for ans in correct_answer.split(';')]
+        possible_answers = split_answers(correct_answer)
         best_similarity = 0.0
         best_match = ""
         
         for answer in possible_answers:
-            clean_answer = re.sub(r'\s+', '', answer.lower())
+            clean_answer = re.sub(r'\s+', '', strip_parentheses(answer).lower())
             
             if user_clean == clean_answer:
                 return True, 1.0, f"✨ 完美！回答完全正确！"
@@ -980,14 +1010,15 @@ class CSVLearningApp:
                 best_similarity = similarity
                 best_match = answer
         
+        clean_best_match = strip_parentheses(best_match)
         if best_similarity >= 0.9:
-            return True, best_similarity, f"✅ 基本正确！与标准答案\"{best_match}\"高度相似（可能是同义词、不同表达或格式差异）"
+            return True, best_similarity, f"✅ 基本正确！与标准答案\"{clean_best_match}\"高度相似（可能是同义词、不同表达或格式差异）"
         elif best_similarity >= 0.7:
-            return False, best_similarity, f"⚠️ 部分正确，与标准答案\"{best_match}\"存在明显差异\n建议：检查词性是否匹配，确认词汇的准确含义"
+            return False, best_similarity, f"⚠️ 部分正确，与标准答案\"{clean_best_match}\"存在明显差异\n建议：检查词性是否匹配，确认词汇的准确含义"
         elif best_similarity >= 0.4:
-            return False, best_similarity, f"❌ 相似度较低，标准答案是：{best_match}\n可能混淆了词义或词性，建议重新学习该单词"
+            return False, best_similarity, f"❌ 相似度较低，标准答案是：{clean_best_match}\n可能混淆了词义或词性，建议重新学习该单词"
         else:
-            return False, best_similarity, f"❌ 答案差异较大，标准答案：{best_match}\n💡 建议：回顾单词的基本含义和用法"
+            return False, best_similarity, f"❌ 答案差异较大，标准答案：{clean_best_match}\n💡 建议：回顾单词的基本含义和用法"
 
     def display_ai_result(self, user_answer, correct_answer, col1, col2, ai_result):
         try:
@@ -997,10 +1028,10 @@ class CSVLearningApp:
 
             import re as _re
             user_clean = _re.sub(r'\s+', '', str(user_answer).lower())
-            possible_answers = [ans.strip() for ans in str(correct_answer).split(';')]
+            possible_answers = split_answers(correct_answer)
             exact_match = False
             for ans in possible_answers:
-                if user_clean == _re.sub(r'\s+', '', ans.lower()):
+                if user_clean == _re.sub(r'\s+', '', strip_parentheses(ans).lower()):
                     exact_match = True
                     break
 
@@ -1027,10 +1058,11 @@ class CSVLearningApp:
             else:
                 mode = "⚙️ 本地算法"
 
+            clean_correct_display = clean_answer_string(correct_answer)
             if is_correct:
                 result_text = f"\n{'='*80}\n📚 第{self.current_index+1}题 [{mode}]\n{'='*80}\n{col1} ({col2})\n你的答案: {user_answer}\n\n正确\n{'='*80}\n\n"
             else:
-                result_text = f"\n{'='*80}\n📚 第{self.current_index+1}题 [{mode}]\n{'='*80}\n{col1} ({col2})\n你的答案: {user_answer}\n\n错误，正确答案：{correct_answer}\n{'='*80}\n\n"
+                result_text = f"\n{'='*80}\n📚 第{self.current_index+1}题 [{mode}]\n{'='*80}\n{col1} ({col2})\n你的答案: {user_answer}\n\n错误，正确答案：{clean_correct_display}\n{'='*80}\n\n"
 
             self.ai_result_text.insert(tk.END, result_text)
             self.ai_result_text.see(tk.END)
@@ -1062,7 +1094,8 @@ class CSVLearningApp:
     def show_answer(self):
         if self.current_csv_data and self.current_index < len(self.current_csv_data):
             correct_answer = self.current_csv_data[self.current_index][2] if len(self.current_csv_data[self.current_index]) > 2 else ""
-            result_text = f"\n💡 正确答案: {correct_answer}\n"
+            clean_display = clean_answer_string(correct_answer)
+            result_text = f"\n💡 正确答案: {clean_display}\n"
             self.ai_result_text.insert(tk.END, result_text)
             self.ai_result_text.see(tk.END)
 
