@@ -702,7 +702,8 @@ class CSVLearningApp:
 
         ttk.Button(action_frame, text="🔄 开始新一轮复习", command=self.start_new_round).grid(row=0, column=0, padx=6)
         ttk.Button(action_frame, text="📥 导出错题本", command=self.export_wrong_answers).grid(row=0, column=1, padx=6)
-        ttk.Button(action_frame, text="🗑️ 重置", command=self.reset_app).grid(row=0, column=2, padx=6)
+        ttk.Button(action_frame, text="📤 导出AI判定日志", command=self.export_ai_logs).grid(row=0, column=2, padx=6)
+        ttk.Button(action_frame, text="🗑️ 重置", command=self.reset_app).grid(row=0, column=3, padx=6)
 
     def setup_settings_tab(self, parent):
         provider_frame = ttk.LabelFrame(parent, text="🌐 选择AI服务商", padding="15")
@@ -1460,6 +1461,62 @@ class CSVLearningApp:
                 messagebox.showinfo("成功", f"✅ 错题本已导出到:\n\n{save_path}\n\n共 {len(self.wrong_answers)} 条记录")
             except Exception as e:
                 messagebox.showerror("错误", f"导出失败: {str(e)}")
+
+    def export_ai_logs(self):
+        log_content = self.ai_result_text.get(1.0, tk.END).strip()
+        if not log_content or log_content == "":
+            messagebox.showinfo("提示", "AI判定日志为空！\n请先完成至少一道题目的判定后再导出。")
+            return
+
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        csv_name = "未命名CSV"
+        if self.csv_file_path:
+            csv_name = os.path.splitext(os.path.basename(self.csv_file_path))[0]
+            csv_name = "".join([c for c in csv_name if c.isalnum() or c in ('_', '-')]) or "未命名CSV"
+        default_filename = f"ai_judge_log_{csv_name}_r{self.current_round}_{timestamp}.txt"
+
+        save_path = filedialog.asksaveasfilename(
+            defaultextension=".txt",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+            initialfile=default_filename
+        )
+
+        if save_path:
+            try:
+                header = []
+                header.append("=" * 72)
+                header.append("📚 CSV词汇学习工具 - AI判定日志导出")
+                header.append("=" * 72)
+                header.append(f"🕒 导出时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                header.append(f"📂 CSV文件: {self.csv_file_path or '（未加载）'}")
+                header.append(f"🔁 当前轮次: {self.current_round}")
+                header.append(f"📊 当前进度: 第 {self.current_index + (1 if self.current_index > 0 else 0)} / {self.total_questions} 题")
+                header.append(f"✅ 正确数: {self.correct_count}    ❌ 错误数: {self.wrong_count}")
+                if self.correct_count + self.wrong_count > 0:
+                    rate = self.correct_count / (self.correct_count + self.wrong_count) * 100
+                    header.append(f"🎯 正确率: {rate:.1f}%")
+                header.append(f"🦙 AI提供商: {self.ai_assistant.ai_provider}")
+                header.append(f"🤖 模型: {self.ai_assistant.model}")
+                header.append(f"🧹 括号清理: {'已开启' if self.ai_assistant.clean_parentheses else '已关闭'}")
+                header.append("=" * 72)
+                header.append("")
+                header.append("")
+
+                with open(save_path, 'w', encoding='utf-8-sig') as f:
+                    f.write("\n".join(header))
+                    f.write(log_content)
+                    f.write("\n")
+
+                size_kb = os.path.getsize(save_path) / 1024
+                messagebox.showinfo(
+                    "成功",
+                    f"✅ AI判定日志已导出到:\n\n{save_path}\n\n"
+                    f"📝 日志大小: {size_kb:.1f} KB\n"
+                    f"🔁 当前轮次: 第 {self.current_round} 轮\n"
+                    f"🎯 进度: {self.correct_count}✅ / {self.wrong_count}❌"
+                )
+            except Exception as e:
+                messagebox.showerror("错误", f"导出AI日志失败: {str(e)}")
 
     def reset_app(self):
         self.current_csv_data = []
