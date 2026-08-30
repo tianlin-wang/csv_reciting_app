@@ -548,12 +548,22 @@ class CSVLearningApp:
         if hasattr(self, 'clean_paren_var') and self.clean_paren_var is not None:
             self.clean_paren_var.set(enabled)
         status = "已开启" if enabled else "已关闭"
-        color = "green" if enabled else "gray"
         self.ai_result_text.insert(tk.END, f"🧹 括号清理功能 {status}\n")
         self.ai_result_text.see(tk.END)
-        if self.paren_check_main:
-            self.paren_check_main.config(foreground=color)
+        self._sync_paren_style_from_state(enabled)
         self._update_paren_tooltip()
+
+    def _sync_paren_style_from_state(self, enabled):
+        if not self.paren_check_main:
+            return
+        try:
+            style = ttk.Style()
+            style.configure('ParenOn.TCheckbutton', foreground='green')
+            style.configure('ParenOff.TCheckbutton', foreground='gray')
+            stname = 'ParenOn.TCheckbutton' if enabled else 'ParenOff.TCheckbutton'
+            self.paren_check_main.config(style=stname)
+        except Exception:
+            pass
 
     def _update_paren_tooltip(self):
         if not self.paren_check_main:
@@ -564,6 +574,7 @@ class CSVLearningApp:
         else:
             tip = "📝 已关闭：苹果（复数）原样参与判定（可能导致AI误判）"
         self.paren_check_main.config(text=tip)
+        self._sync_paren_style_from_state(enabled)
 
     def _sync_paren_ui_from_config(self):
         val = self.ai_assistant.clean_parentheses
@@ -572,6 +583,7 @@ class CSVLearningApp:
         if hasattr(self, 'clean_paren_var') and self.clean_paren_var is not None:
             self.clean_paren_var.set(val)
         self._update_paren_tooltip()
+        self._sync_paren_style_from_state(val)
 
     def geometry(self, size):
         self.root.geometry(size)
@@ -630,7 +642,6 @@ class CSVLearningApp:
         )
         self.paren_check_main.grid(row=0, column=4, padx=10)
         self._update_paren_tooltip()
-        self.paren_check_main.bind('<Enter>', lambda e: self._update_paren_tooltip())
 
         question_frame = ttk.LabelFrame(parent, text="❓ 当前题目", padding="15")
         question_frame.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
