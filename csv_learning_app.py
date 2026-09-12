@@ -1501,10 +1501,10 @@ class CSVLearningApp:
             try:
                 with open(save_path, 'w', newline='', encoding='utf-8-sig') as f:
                     writer = csv.writer(f)
-                    writer.writerow(['第一列', '第二列', '第三列', '你的答案', '正确答案'])
-                    writer.writerows(self.wrong_answers)
+                    for row in self.wrong_answers:
+                        writer.writerow(row[:3])
 
-                messagebox.showinfo("成功", f"✅ 错题本已导出到:\n\n{save_path}\n\n共 {len(self.wrong_answers)} 条记录")
+                messagebox.showinfo("成功", f"✅ 错题本已导出到:\n\n{save_path}\n\n共 {len(self.wrong_answers)} 条记录\n（格式与输入CSV一致，可直接重新加载学习）")
             except Exception as e:
                 messagebox.showerror("错误", f"导出失败: {str(e)}")
 
