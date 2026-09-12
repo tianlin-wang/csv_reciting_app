@@ -608,8 +608,8 @@ class CSVLearningApp:
         self.root.geometry(size)
 
     def _on_window_resize(self, event):
-        if event.height != self._last_resize_width:
-            self._last_resize_width = event.height
+        if event.height != self._last_resize_height:
+            self._last_resize_height = event.height
             if self._resize_timer:
                 self.root.after_cancel(self._resize_timer)
             self._resize_timer = self.root.after(300, self._update_word_font_sizes)
