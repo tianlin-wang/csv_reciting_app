@@ -74,7 +74,6 @@ except ImportError:
     HAS_OLLAMA = False
 import urllib.request
 import urllib.error
-import subprocess
 
 
 class OllamaAILearningAssistant:
@@ -788,57 +787,7 @@ class CSVLearningApp:
 
         ctk.CTkButton(other_api_frame, text="💾 保存所有设置", command=self.save_ai_settings, height=40, font=ctk.CTkFont(size=13, weight='bold'), fg_color="#27ae60", hover_color="#219a52").grid(row=3, column=0, columnspan=2, pady=15)
 
-        i_wrap, install_frame = ctk_group(parent, "📦 安装依赖库", padding=15)
-        i_wrap.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=8, padx=8)
 
-        status_text = f"Ollama Python库: {'✅ 已安装' if HAS_OLLAMA else '❌ 未安装'}\n"
-        status_text += f"通义千问(dashscope): {'✅ 已安装' if HAS_DASHSCOPE else '❌ 未安装'}\n"
-        status_text += f"智谱AI(zhipuai): {'✅ 已安装' if HAS_ZHIPU else '❌ 未安装'}\n"
-        status_text += f"OpenAI: {'✅ 已安装' if HAS_OPENAI else '❌ 未安装'}"
-
-        self.install_status = ctk.CTkLabel(install_frame, text=status_text, font=ctk.CTkFont(family='Consolas', size=12), anchor="w", justify="left")
-        self.install_status.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=6)
-
-        btn_frame = ctk.CTkFrame(install_frame, fg_color="transparent")
-        btn_frame.grid(row=1, column=0, sticky=tk.W, pady=6)
-
-        if not HAS_OLLAMA:
-            ctk.CTkButton(btn_frame, text="安装Ollama库", command=lambda: self.install_package('ollama'), width=140).grid(row=0, column=0, padx=5)
-        
-        if not HAS_DASHSCOPE:
-            ctk.CTkButton(btn_frame, text="安装通义千问", command=lambda: self.install_package('dashscope'), width=140, fg_color="#f39c12", hover_color="#d68910").grid(row=0, column=1, padx=5)
-        
-        if not HAS_ZHIPU:
-            ctk.CTkButton(btn_frame, text="安装智谱AI", command=lambda: self.install_package('zhipuai'), width=140, fg_color="#9b59b6", hover_color="#8e44ad").grid(row=0, column=2, padx=5)
-        
-        if not HAS_OPENAI:
-            ctk.CTkButton(btn_frame, text="安装OpenAI", command=lambda: self.install_package('openai'), width=140, fg_color="#3498db", hover_color="#2980b9").grid(row=0, column=3, padx=5)
-
-        usage_info = """
-🦙 Ollama 使用指南:
-
-【推荐】为什么选Ollama?
-   ✅ 完全免费 - 无需API费用
-   ✅ 完全本地 - 隐私安全
-   ✅ 无限使用 - 不受限制
-   ✅ 中文优秀 - 支持Qwen等中文模型
-   ✅ 离线可用 - 断网也能用
-
-【快速开始】
-1. 安装Ollama: https://ollama.ai
-2. 运行命令: ollama run qwen2.5:7b
-3. 在本应用中选择Ollama即可！
-
-【推荐模型】
-• qwen2.5:7b - 通义千问2.5 (中文优秀⭐)
-• qwen2.5:14b - 更强大的中文能力
-• llama3.2 - Meta最新模型
-• mistral - 欧洲最强开源模型
-
-💡 其他提供商需要API Key和联网！
-"""
-        usage_label = ctk.CTkLabel(install_frame, text=usage_info, font=ctk.CTkFont(family='Consolas', size=11), justify=tk.LEFT, anchor="w", text_color="#bdc3c7")
-        usage_label.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=12)
 
     def on_provider_change(self, *args):
         self.update_provider_description()
@@ -948,27 +897,6 @@ class CSVLearningApp:
         else:
             self.ai_status_label.configure(text="AI: 未知", text_color="#f39c12")
 
-    def install_package(self, package_name):
-        def _install():
-            try:
-                result = subprocess.run(
-                    [sys.executable, "-m", "pip", "install", package_name],
-                    capture_output=True,
-                    text=True,
-                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-                )
-                self.root.after(0, lambda: self._show_install_result(package_name, result))
-            except Exception as e:
-                self.root.after(0, lambda: messagebox.showerror("错误", f"安装过程出错:\n{str(e)}"))
-
-        thread = threading.Thread(target=_install, daemon=True)
-        thread.start()
-
-    def _show_install_result(self, package_name, result):
-        if result.returncode == 0:
-            messagebox.showinfo("成功", f"{package_name} 库安装成功！\n请重启程序以使用该功能。")
-        else:
-            messagebox.showerror("错误", f"安装失败:\n{result.stderr}")
 
     def load_csv(self):
         file_path = filedialog.askopenfilename(
