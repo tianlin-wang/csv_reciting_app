@@ -559,9 +559,10 @@ class CSVLearningApp:
         self.clean_paren_var_main = None
 
         self.setup_ui()
-        self.root.after(100, self._update_word_font_sizes)
+        self._last_resize_height = 0
+        self._resize_timer = None
         self.root.bind('<Configure>', self._on_window_resize)
-        self._last_resize_width = 1100
+        self.root.after(800, self._update_word_font_sizes)
 
     def _on_toggle_clean_paren(self):
         enabled = self.clean_paren_var_main.get()
@@ -607,19 +608,21 @@ class CSVLearningApp:
         self.root.geometry(size)
 
     def _on_window_resize(self, event):
-        if event.width != self._last_resize_width:
-            self._last_resize_width = event.width
-            self.root.after(200, self._update_word_font_sizes)
+        if event.height != self._last_resize_width:
+            self._last_resize_width = event.height
+            if self._resize_timer:
+                self.root.after_cancel(self._resize_timer)
+            self._resize_timer = self.root.after(300, self._update_word_font_sizes)
 
     def _update_word_font_sizes(self):
-        w = self.root.winfo_width()
-        if w < 10:
+        h = self.root.winfo_height()
+        if h < 10:
             return
-        if w >= 1400:
+        if h >= 900:
             col1_size, col2_size = 48, 38
-        elif w >= 1100:
+        elif h >= 700:
             col1_size, col2_size = 40, 32
-        elif w >= 800:
+        elif h >= 500:
             col1_size, col2_size = 32, 26
         else:
             col1_size, col2_size = 24, 20
