@@ -1053,6 +1053,7 @@ class CSVLearningApp:
                 "save_time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "csv_file_path": self.csv_file_path if hasattr(self, 'csv_file_path') else "",
                 "csv_file_name": os.path.basename(self.csv_file_path) if hasattr(self, 'csv_file_path') else "",
+                "current_csv_data": self.current_csv_data,
                 "total_questions": self.total_questions,
                 "current_index": self.current_index,
                 "current_round": self.current_round,
@@ -1093,42 +1094,55 @@ class CSVLearningApp:
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
 
-            csv_path = data.get("csv_file_path", "")
-            if not csv_path or not os.path.exists(csv_path):
-                alt = messagebox.askyesno(
-                    "CSV 文件未找到",
-                    f"进度中的 CSV 文件不存在:\n{csv_path}\n\n是否手动选择新的 CSV 文件？\n（如果列顺序一致可继续使用）"
-                )
-                if alt:
-                    csv_path = filedialog.askopenfilename(
-                        filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+            saved_csv_data = data.get("current_csv_data", [])
+            use_saved_data = saved_csv_data and isinstance(saved_csv_data, list) and len(saved_csv_data) > 0
+
+            if not use_saved_data:
+                csv_path = data.get("csv_file_path", "")
+                if not csv_path or not os.path.exists(csv_path):
+                    alt = messagebox.askyesno(
+                        "CSV 文件未找到",
+                        f"进度中的 CSV 文件不存在:\n{csv_path}\n\n是否手动选择新的 CSV 文件？\n（如果列顺序一致可继续使用）"
                     )
-                    if not csv_path:
+                    if alt:
+                        csv_path = filedialog.askopenfilename(
+                            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+                        )
+                        if not csv_path:
+                            return
+                    else:
                         return
-                else:
+
+                with open(csv_path, 'r', encoding='utf-8') as f:
+                    reader = csv.reader(f)
+                    self.current_csv_data = list(reader)
+
+                if len(self.current_csv_data) == 0:
+                    messagebox.showerror("错误", "CSV 文件为空！")
                     return
-
-            with open(csv_path, 'r', encoding='utf-8') as f:
-                reader = csv.reader(f)
-                self.current_csv_data = list(reader)
-
-            if len(self.current_csv_data) == 0:
-                messagebox.showerror("错误", "CSV 文件为空！")
-                return
-            if len(self.current_csv_data[0]) < 3:
-                messagebox.showerror("错误", "CSV 文件至少需要3列数据！")
-                return
+                if len(self.current_csv_data[0]) < 3:
+                    messagebox.showerror("错误", "CSV 文件至少需要3列数据！")
+                    return
+            else:
+                self.current_csv_data = saved_csv_data
+                csv_path = data.get("csv_file_path", "")
+                if not csv_path or not os.path.exists(csv_path):
+                    csv_path = ""
 
             self.csv_file_path = csv_path
-            self.file_label.configure(text=os.path.basename(csv_path))
+            self.file_label.configure(text=os.path.basename(csv_path) if csv_path else "（无关联CSV）")
             self.total_questions = len(self.current_csv_data)
-            self.current_index = min(int(data.get("current_index", 0)), self.total_questions - 1)
+            self.current_index = min(int(data.get("current_index", 0)), max(self.total_questions - 1, 0))
             self.current_round = int(data.get("current_round", 1))
             self.correct_count = int(data.get("correct_count", 0))
             self.wrong_count = int(data.get("wrong_count", 0))
             self.wrong_answers = data.get("wrong_answers", [])
             if not isinstance(self.wrong_answers, list):
                 self.wrong_answers = []
+
+            if self.total_questions == 0:
+                messagebox.showerror("错误", "恢复的进度数据为空！")
+                return
 
             self.update_progress()
             self.update_ai_status()
