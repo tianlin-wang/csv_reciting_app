@@ -1204,7 +1204,19 @@ class CSVLearningApp:
 
         self.processing = True
 
-        if self.ai_assistant.use_ai and self.ai_assistant.ai_provider != 'local':
+        import re
+        user_clean = re.sub(r'\s+', '', user_answer.lower())
+        possible_answers = split_answers(correct_answer)
+        exact_match = False
+        for ans in possible_answers:
+            ans_clean = re.sub(r'\s+', '', strip_parentheses(ans, self.ai_assistant).lower())
+            if user_clean == ans_clean:
+                exact_match = True
+                break
+
+        if exact_match:
+            self.submit_local(user_answer, correct_answer, col1, col2)
+        elif self.ai_assistant.use_ai and self.ai_assistant.ai_provider != 'local':
             thread = threading.Thread(target=self.submit_with_ai, args=(user_answer, correct_answer, col1, col2))
             thread.daemon = True
             thread.start()
