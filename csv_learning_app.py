@@ -692,19 +692,27 @@ class CSVLearningApp:
         self.paren_switch_main.grid(row=0, column=4, columnspan=2, padx=8, pady=6, sticky="w")
         self._update_paren_tooltip()
 
-        q_wrap, question_frame = ctk_group(parent, "❓ 当前题目", padding=18)
+        q_wrap = ctk.CTkFrame(parent, fg_color="#1e272e", corner_radius=10)
         q_wrap.grid(row=2, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
         parent.rowconfigure(2, weight=1)
-        question_frame.columnconfigure(1, weight=1)
+        q_wrap.columnconfigure(0, weight=1)
+        q_wrap.rowconfigure(0, weight=1)
 
-        self.col1_label = ctk.CTkLabel(question_frame, text="📝 单词:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=28, weight='bold'), text_color="#3498db")
+        q_title = ctk.CTkLabel(q_wrap, text="❓ 当前题目", font=ctk.CTkFont(family='Microsoft YaHei UI', size=14, weight='bold'), text_color="#ecf0f1")
+        q_title.grid(row=0, column=0, sticky=tk.W, padx=12, pady=(10, 4))
+
+        q_scroll = ctk.CTkScrollableFrame(q_wrap, fg_color="transparent", scrollbar_button_color="#3498db", scrollbar_button_hover_color="#2980b9")
+        q_scroll.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=12, pady=(4, 12))
+        q_scroll.columnconfigure(1, weight=1)
+
+        self.col1_label = ctk.CTkLabel(q_scroll, text="📝 单词:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=28, weight='bold'), text_color="#3498db")
         self.col1_label.grid(row=0, column=0, sticky=tk.W, pady=10)
-        self.col1_value = ctk.CTkLabel(question_frame, text="-", font=ctk.CTkFont(family='Microsoft YaHei UI', size=40, weight='bold'), text_color="#5dade2", anchor="w", justify="left")
+        self.col1_value = ctk.CTkLabel(q_scroll, text="-", font=ctk.CTkFont(family='Microsoft YaHei UI', size=40, weight='bold'), text_color="#5dade2", anchor="w", justify="left")
         self.col1_value.grid(row=0, column=1, sticky=(tk.W, tk.E), pady=10, padx=12)
 
-        self.col2_label = ctk.CTkLabel(question_frame, text="🏷️ 词性:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=28, weight='bold'), text_color="#e74c3c")
+        self.col2_label = ctk.CTkLabel(q_scroll, text="🏷️ 词性:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=28, weight='bold'), text_color="#e74c3c")
         self.col2_label.grid(row=1, column=0, sticky=tk.W, pady=10)
-        self.col2_value = ctk.CTkLabel(question_frame, text="-", font=ctk.CTkFont(family='Microsoft YaHei UI', size=32, slant='italic'), text_color="#ec7063", anchor="w", justify="left")
+        self.col2_value = ctk.CTkLabel(q_scroll, text="-", font=ctk.CTkFont(family='Microsoft YaHei UI', size=32, slant='italic'), text_color="#ec7063", anchor="w", justify="left")
         self.col2_value.grid(row=1, column=1, sticky=(tk.W, tk.E), pady=10, padx=12)
 
         a_wrap, answer_frame = ctk_group(parent, "✍️ 你的答案 (第三列)", padding=15)
