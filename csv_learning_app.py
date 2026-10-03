@@ -895,11 +895,12 @@ class CSVLearningApp:
         self._register_font('col1_value', 'Microsoft YaHei UI', 32, weight='bold')
 
         self.col2_label = ctk.CTkLabel(q_scroll, text="🏷️ 词性:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=22, weight='bold'), text_color="#e74c3c")
-        self.col2_label.grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.col2_label.grid(row=0, column=2, sticky=tk.W, pady=5, padx=(20, 0))
         self.col2_value = ctk.CTkLabel(q_scroll, text="-", font=ctk.CTkFont(family='Microsoft YaHei UI', size=26, slant='italic'), text_color="#ec7063", anchor="w", justify="left")
-        self.col2_value.grid(row=1, column=1, sticky=(tk.W, tk.E), pady=5, padx=12)
+        self.col2_value.grid(row=0, column=3, sticky=(tk.W, tk.E), pady=5, padx=12)
         self._register_font('col2_label', 'Microsoft YaHei UI', 22, weight='bold')
         self._register_font('col2_value', 'Microsoft YaHei UI', 26, slant='italic')
+        q_scroll.columnconfigure(3, weight=1)
 
         a_wrap, answer_frame, ans_title = ctk_group(parent, "✍️ 你的答案 (第三列)", padding=10)
         a_wrap.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=3)
