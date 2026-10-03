@@ -1,5 +1,9 @@
 import csv
 import os
+import sys
+import time
+import subprocess
+import shutil
 import datetime
 import tkinter as tk
 from tkinter import filedialog, messagebox
@@ -137,15 +141,17 @@ class OllamaAILearningAssistant:
         self.ollama_base_url = url
         self.save_config()
 
-    def check_ollama_running(self):
-        try:
-            if HAS_OLLAMA:
-                ollama.list()
-                return True
-            else:
-                return self._check_ollama_http()
-        except:
-            return self._check_ollama_http()
+    def check_ollama_running(self, auto_start=True):
+        if self._check_ollama_http():
+            return True
+        if auto_start:
+            started = self.start_ollama()
+            if started:
+                for _ in range(30):
+                    time.sleep(1)
+                    if self._check_ollama_http():
+                        return True
+        return False
 
     def _check_ollama_http(self):
         try:
@@ -156,7 +162,75 @@ class OllamaAILearningAssistant:
         except:
             return False
 
-    def get_ollama_models(self):
+    def find_ollama_executable(self):
+        candidates = []
+        ollama_path = os.environ.get('OLLAMA_PATH', '').strip()
+        if ollama_path:
+            candidates.append(os.path.expandvars(ollama_path))
+        try:
+            found = shutil.which('ollama')
+            if found:
+                candidates.append(found)
+        except Exception:
+            pass
+        if sys.platform == 'win32':
+            candidates.append(r"C:\Program Files\Ollama\ollama.exe")
+            candidates.append(os.path.expandvars(r"%LOCALAPPDATA%\Programs\Ollama\ollama.exe"))
+            candidates.append(os.path.expandvars(r"%LOCALAPPDATA%\Ollama\ollama.exe"))
+            candidates.append(os.path.expandvars(r"%APPDATA%\Ollama\ollama.exe"))
+            candidates.append(os.path.expandvars(r"%ProgramData%\Ollama\ollama.exe"))
+            try:
+                la = os.environ.get('LOCALAPPDATA', '')
+                if la:
+                    for root, dirs, files in os.walk(la):
+                        if 'ollama.exe' in files:
+                            candidates.append(os.path.join(root, 'ollama.exe'))
+                            break
+            except Exception:
+                pass
+        elif sys.platform == 'darwin':
+            candidates.append("/Applications/Ollama.app/Contents/Resources/bin/ollama")
+            candidates.append("/usr/local/bin/ollama")
+        else:
+            candidates.append("/usr/local/bin/ollama")
+            candidates.append("/usr/bin/ollama")
+            candidates.append("/snap/bin/ollama")
+        for c in candidates:
+            c = c.strip()
+            if c and os.path.isfile(c):
+                return c
+        return None
+
+    def start_ollama(self):
+        exe = self.find_ollama_executable()
+        if not exe:
+            return False
+        try:
+            env = os.environ.copy()
+            env['OLLAMA_HOST'] = self.ollama_base_url
+            if sys.platform == 'win32':
+                DETACHED_PROCESS = 0x00000008
+                CREATE_NO_WINDOW = 0x08000000
+                subprocess.Popen(
+                    [exe, 'serve'],
+                    creationflags=DETACHED_PROCESS | CREATE_NO_WINDOW,
+                    env=env,
+                    close_fds=True
+                )
+            else:
+                subprocess.Popen(
+                    [exe, 'serve'],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                    env=env
+                )
+            return True
+        except Exception as e:
+            print(f"启动 Ollama 失败: {e}")
+            return False
+
+    def get_ollama_models(self, silent=False):
         models = []
         try:
             if HAS_OLLAMA:
@@ -166,13 +240,14 @@ class OllamaAILearningAssistant:
                 elif isinstance(model_list, dict) and 'models' in model_list:
                     models = [m['model'] for m in model_list['models']]
             else:
-                models = self._get_models_http()
+                models = self._get_models_http(silent=silent)
         except Exception as e:
-            print(f"获取Ollama模型失败: {e}")
+            if not silent:
+                print(f"获取Ollama模型失败: {e}")
         
         return models
 
-    def _get_models_http(self):
+    def _get_models_http(self, silent=False):
         try:
             url = f"{self.ollama_base_url}/api/tags"
             req = urllib.request.Request(url, method='GET')
@@ -181,7 +256,8 @@ class OllamaAILearningAssistant:
                 if 'models' in data:
                     return [m['model'] for m in data['models']]
         except Exception as e:
-            print(f"HTTP获取模型失败: {e}")
+            if not silent:
+                print(f"HTTP获取模型失败: {e}")
         return []
 
     def get_available_providers(self):
@@ -217,7 +293,7 @@ class OllamaAILearningAssistant:
             'desc': '百度文心大模型'
         }
 
-        ollama_models = self.get_ollama_models()
+        ollama_models = self.get_ollama_models(silent=True)
         if ollama_models:
             providers['ollama']['models'] = sorted(ollama_models)
 
@@ -536,7 +612,7 @@ def ctk_group(parent, title, padding=15):
     lbl.pack(fill="x", padx=padding, pady=(padding, 5))
     inner = ctk.CTkFrame(frame, fg_color="transparent")
     inner.pack(fill="both", expand=True, padx=padding, pady=(0, padding))
-    return frame, inner
+    return frame, inner, lbl
 
 
 class CSVLearningApp:
@@ -558,11 +634,16 @@ class CSVLearningApp:
         self.paren_switch_main = None
         self.clean_paren_var_main = None
 
+        self._font_specs = {}
+        self._base_w = 1100
+        self._base_h = 900
+
         self.setup_ui()
-        self._last_resize_height = 0
+        self._last_resize_size = (0, 0)
         self._resize_timer = None
         self.root.bind('<Configure>', self._on_window_resize)
-        self.root.after(800, self._update_word_font_sizes)
+        self.root.after(100, self._update_all_font_sizes)
+        self.root.after(800, self._ensure_ollama_running_async_startup)
 
     def _on_toggle_clean_paren(self):
         enabled = self.clean_paren_var_main.get()
@@ -608,29 +689,113 @@ class CSVLearningApp:
         self.root.geometry(size)
 
     def _on_window_resize(self, event):
-        if event.height != self._last_resize_height:
-            self._last_resize_height = event.height
+        if event.widget is not self.root:
+            return
+        size = (event.width, event.height)
+        if size != self._last_resize_size:
+            self._last_resize_size = size
             if self._resize_timer:
                 self.root.after_cancel(self._resize_timer)
-            self._resize_timer = self.root.after(300, self._update_word_font_sizes)
+            self._resize_timer = self.root.after(250, self._update_all_font_sizes)
 
-    def _update_word_font_sizes(self):
-        h = self.root.winfo_height()
-        if h < 10:
+    def _register_font(self, attr_name, family, base_size, **kwargs):
+        self._font_specs[attr_name] = (family, base_size, kwargs)
+
+    def _ensure_ollama_running_async_startup(self):
+        if self.ai_assistant._check_ollama_http():
+            self.update_ai_status()
             return
-        if h >= 900:
-            col1_size, col2_size = 48, 38
-        elif h >= 700:
-            col1_size, col2_size = 40, 32
-        elif h >= 500:
-            col1_size, col2_size = 32, 26
-        else:
-            col1_size, col2_size = 24, 20
-        try:
-            self.col1_value.configure(font=ctk.CTkFont(family='Microsoft YaHei UI', size=col1_size, weight='bold'))
-            self.col2_value.configure(font=ctk.CTkFont(family='Microsoft YaHei UI', size=col2_size, slant='italic'))
-        except Exception:
-            pass
+
+        def worker():
+            started = self.ai_assistant.start_ollama()
+            if not started:
+                return
+            for i in range(30):
+                time.sleep(1)
+                if self.ai_assistant._check_ollama_http():
+                    self.root.after(0, self.update_ai_status)
+                    return
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _ensure_ollama_running_async(self, on_done=None, silent=False):
+        if self.ai_assistant._check_ollama_http():
+            self.root.after(0, lambda: self._on_ollama_ready(on_done, silent))
+            return
+        if not silent:
+            self.ai_result_text.insert(tk.END, "🦙 Ollama 未运行，正在自动启动...\n")
+            self.ai_result_text.see(tk.END)
+            try:
+                self.ollama_status_label.configure(text="🦙 正在启动 Ollama...", text_color="#f39c12")
+            except Exception:
+                pass
+
+        def worker():
+            started = self.ai_assistant.start_ollama()
+            if not started:
+                self.root.after(0, lambda: self._on_ollama_failed(on_done, silent))
+                return
+            for i in range(30):
+                time.sleep(1)
+                if self.ai_assistant._check_ollama_http():
+                    self.root.after(0, lambda: self._on_ollama_ready(on_done, silent))
+                    return
+                if not silent and (i + 1) % 5 == 0:
+                    self.root.after(0, lambda sec=i+1: self.ai_result_text.insert(tk.END, f"  ⏳ 等待 Ollama 就绪 ({sec}s)...\n") or self.ai_result_text.see(tk.END))
+            self.root.after(0, lambda: self._on_ollama_failed(on_done, silent))
+
+        t = threading.Thread(target=worker, daemon=True)
+        t.start()
+
+    def _on_ollama_ready(self, on_done, silent):
+        self.update_ai_status()
+        if not silent:
+            self.ai_result_text.insert(tk.END, "✅ Ollama 已就绪！\n")
+            self.ai_result_text.see(tk.END)
+        if on_done:
+            try:
+                on_done(True)
+            except Exception:
+                pass
+
+    def _on_ollama_failed(self, on_done, silent):
+        self.update_ai_status()
+        exe = self.ai_assistant.find_ollama_executable()
+        if not silent:
+            if exe:
+                msg = f"⚠️ 自动启动 Ollama 超时，将使用本地相似度算法\n💡 可手动在终端运行: \"{exe} serve\""
+            else:
+                msg = "⚠️ 未找到 Ollama 可执行文件\n💡 请从 https://ollama.com 下载安装后重试"
+            self.ai_result_text.insert(tk.END, msg + "\n")
+            self.ai_result_text.see(tk.END)
+            try:
+                self.ollama_status_label.configure(text="🦙 Ollama (未连接)", text_color="#e74c3c")
+            except Exception:
+                pass
+        if on_done:
+            try:
+                on_done(False)
+            except Exception:
+                pass
+
+    def _compute_scale(self):
+        w = max(self.root.winfo_width(), 100)
+        h = max(self.root.winfo_height(), 100)
+        scale = min(w / self._base_w, h / self._base_h)
+        return max(0.55, min(scale, 2.2))
+
+    def _update_all_font_sizes(self):
+        scale = self._compute_scale()
+        ui_scale = max(0.7, min(scale, 2.0))
+        for attr_name, (family, base_size, kwargs) in self._font_specs.items():
+            try:
+                widget = getattr(self, attr_name, None)
+                if widget is None:
+                    continue
+                new_size = max(6, int(round(base_size * ui_scale))) if base_size <= 16 else max(10, int(round(base_size * scale)))
+                widget.configure(font=ctk.CTkFont(family=family, size=new_size, **kwargs))
+            except Exception:
+                pass
 
     def setup_ui(self):
         main_frame = ctk.CTkFrame(self.root, fg_color="transparent")
@@ -655,19 +820,29 @@ class CSVLearningApp:
     def setup_learning_tab(self, parent):
         parent.columnconfigure(0, weight=1)
 
-        file_wrap, file_frame = ctk_group(parent, "📁 文件操作", padding=12)
-        file_wrap.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=5)
+        file_wrap, file_frame, file_title = ctk_group(parent, "📁 文件操作", padding=10)
+        file_wrap.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=3)
+        self._register_font('file_title', 'Microsoft YaHei UI', 13, weight='bold')
 
-        ctk.CTkButton(file_frame, text="选择 CSV 文件", command=self.load_csv, width=140).grid(row=0, column=0, padx=6, pady=5)
-        ctk.CTkButton(file_frame, text="💾 保存进度", command=self.save_progress, width=120, fg_color="#27ae60", hover_color="#219a52").grid(row=0, column=1, padx=6, pady=5)
-        ctk.CTkButton(file_frame, text="📂 读取进度", command=self.load_progress, width=120, fg_color="#2980b9", hover_color="#2471a3").grid(row=0, column=2, padx=6, pady=5)
+        self.btn_load = ctk.CTkButton(file_frame, text="选择 CSV 文件", command=self.load_csv, width=140, font=ctk.CTkFont(family='Microsoft YaHei UI', size=12))
+        self.btn_load.grid(row=0, column=0, padx=6, pady=5)
+        self.btn_save = ctk.CTkButton(file_frame, text="💾 保存进度", command=self.save_progress, width=120, fg_color="#27ae60", hover_color="#219a52", font=ctk.CTkFont(family='Microsoft YaHei UI', size=12))
+        self.btn_save.grid(row=0, column=1, padx=6, pady=5)
+        self.btn_read = ctk.CTkButton(file_frame, text="📂 读取进度", command=self.load_progress, width=120, fg_color="#2980b9", hover_color="#2471a3", font=ctk.CTkFont(family='Microsoft YaHei UI', size=12))
+        self.btn_read.grid(row=0, column=2, padx=6, pady=5)
+        self._register_font('btn_load', 'Microsoft YaHei UI', 12)
+        self._register_font('btn_save', 'Microsoft YaHei UI', 12)
+        self._register_font('btn_read', 'Microsoft YaHei UI', 12)
+
         self.file_label = ctk.CTkLabel(file_frame, text="未选择文件", font=ctk.CTkFont(family='Microsoft YaHei UI', size=12), text_color="#a0a0a0")
         self.file_label.grid(row=0, column=3, padx=15, sticky=tk.W)
+        self._register_font('file_label', 'Microsoft YaHei UI', 12)
 
-        info_wrap, info_frame = ctk_group(parent, "📊 进度信息", padding=12)
-        info_wrap.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=5)
+        info_wrap, info_frame, info_title = ctk_group(parent, "📊 进度信息", padding=10)
+        info_wrap.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=3)
         for c in range(6):
             info_frame.columnconfigure(c, weight=1)
+        self._register_font('info_title', 'Microsoft YaHei UI', 13, weight='bold')
 
         self.round_label = ctk.CTkLabel(info_frame, text="轮次: 1", font=ctk.CTkFont(family='Microsoft YaHei UI', size=13, weight='bold'))
         self.round_label.grid(row=0, column=0, padx=8, pady=6)
@@ -677,6 +852,10 @@ class CSVLearningApp:
         self.stats_label.grid(row=0, column=2, padx=8, pady=6)
         self.ai_status_label = ctk.CTkLabel(info_frame, text="🦙 AI: Ollama", font=ctk.CTkFont(family='Microsoft YaHei UI', size=13), text_color="#2ecc71")
         self.ai_status_label.grid(row=0, column=3, padx=8, pady=6)
+        self._register_font('round_label', 'Microsoft YaHei UI', 13, weight='bold')
+        self._register_font('progress_label', 'Microsoft YaHei UI', 13)
+        self._register_font('stats_label', 'Microsoft YaHei UI', 13)
+        self._register_font('ai_status_label', 'Microsoft YaHei UI', 13)
 
         self.clean_paren_var_main = ctk.BooleanVar(value=self.ai_assistant.clean_parentheses)
         self.paren_switch_main = ctk.CTkSwitch(
@@ -691,138 +870,195 @@ class CSVLearningApp:
         )
         self.paren_switch_main.grid(row=0, column=4, columnspan=2, padx=8, pady=6, sticky="w")
         self._update_paren_tooltip()
+        self._register_font('paren_switch_main', 'Microsoft YaHei UI', 12)
 
-        q_wrap = ctk.CTkFrame(parent, fg_color="#1e272e", corner_radius=10)
-        q_wrap.grid(row=2, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
-        parent.rowconfigure(2, weight=1)
+        q_wrap = ctk.CTkFrame(parent, fg_color="#1e272e", corner_radius=10, height=175)
+        q_wrap.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=3)
+        parent.rowconfigure(2, weight=0)
+        q_wrap.grid_propagate(False)
         q_wrap.columnconfigure(0, weight=1)
-        q_wrap.rowconfigure(0, weight=1)
+        q_wrap.rowconfigure(1, weight=1)
 
-        q_title = ctk.CTkLabel(q_wrap, text="❓ 当前题目", font=ctk.CTkFont(family='Microsoft YaHei UI', size=14, weight='bold'), text_color="#ecf0f1")
-        q_title.grid(row=0, column=0, sticky=tk.W, padx=12, pady=(10, 4))
+        self.q_title = ctk.CTkLabel(q_wrap, text="❓ 当前题目", font=ctk.CTkFont(family='Microsoft YaHei UI', size=13, weight='bold'), text_color="#ecf0f1")
+        self.q_title.grid(row=0, column=0, sticky=tk.W, padx=12, pady=(6, 2))
+        self._register_font('q_title', 'Microsoft YaHei UI', 13, weight='bold')
 
         q_scroll = ctk.CTkScrollableFrame(q_wrap, fg_color="transparent", scrollbar_button_color="#3498db", scrollbar_button_hover_color="#2980b9")
-        q_scroll.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=12, pady=(4, 12))
+        q_scroll.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=12, pady=(2, 6))
         q_scroll.columnconfigure(1, weight=1)
 
-        self.col1_label = ctk.CTkLabel(q_scroll, text="📝 单词:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=28, weight='bold'), text_color="#3498db")
-        self.col1_label.grid(row=0, column=0, sticky=tk.W, pady=10)
-        self.col1_value = ctk.CTkLabel(q_scroll, text="-", font=ctk.CTkFont(family='Microsoft YaHei UI', size=40, weight='bold'), text_color="#5dade2", anchor="w", justify="left")
-        self.col1_value.grid(row=0, column=1, sticky=(tk.W, tk.E), pady=10, padx=12)
+        self.col1_label = ctk.CTkLabel(q_scroll, text="📝 单词:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=22, weight='bold'), text_color="#3498db")
+        self.col1_label.grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.col1_value = ctk.CTkLabel(q_scroll, text="-", font=ctk.CTkFont(family='Microsoft YaHei UI', size=32, weight='bold'), text_color="#5dade2", anchor="w", justify="left")
+        self.col1_value.grid(row=0, column=1, sticky=(tk.W, tk.E), pady=5, padx=12)
+        self._register_font('col1_label', 'Microsoft YaHei UI', 22, weight='bold')
+        self._register_font('col1_value', 'Microsoft YaHei UI', 32, weight='bold')
 
-        self.col2_label = ctk.CTkLabel(q_scroll, text="🏷️ 词性:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=28, weight='bold'), text_color="#e74c3c")
-        self.col2_label.grid(row=1, column=0, sticky=tk.W, pady=10)
-        self.col2_value = ctk.CTkLabel(q_scroll, text="-", font=ctk.CTkFont(family='Microsoft YaHei UI', size=32, slant='italic'), text_color="#ec7063", anchor="w", justify="left")
-        self.col2_value.grid(row=1, column=1, sticky=(tk.W, tk.E), pady=10, padx=12)
+        self.col2_label = ctk.CTkLabel(q_scroll, text="🏷️ 词性:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=22, weight='bold'), text_color="#e74c3c")
+        self.col2_label.grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.col2_value = ctk.CTkLabel(q_scroll, text="-", font=ctk.CTkFont(family='Microsoft YaHei UI', size=26, slant='italic'), text_color="#ec7063", anchor="w", justify="left")
+        self.col2_value.grid(row=1, column=1, sticky=(tk.W, tk.E), pady=5, padx=12)
+        self._register_font('col2_label', 'Microsoft YaHei UI', 22, weight='bold')
+        self._register_font('col2_value', 'Microsoft YaHei UI', 26, slant='italic')
 
-        a_wrap, answer_frame = ctk_group(parent, "✍️ 你的答案 (第三列)", padding=15)
-        a_wrap.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=5)
+        a_wrap, answer_frame, ans_title = ctk_group(parent, "✍️ 你的答案 (第三列)", padding=10)
+        a_wrap.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=3)
         answer_frame.columnconfigure(0, weight=1)
+        self._register_font('ans_title', 'Microsoft YaHei UI', 13, weight='bold')
 
-        self.answer_entry = ctk.CTkEntry(answer_frame, font=ctk.CTkFont(family='Microsoft YaHei UI', size=14), height=40, placeholder_text="请输入你的答案...")
+        self.answer_entry = ctk.CTkEntry(answer_frame, font=ctk.CTkFont(family='Microsoft YaHei UI', size=14), height=36, placeholder_text="请输入你的答案...")
         self.answer_entry.grid(row=0, column=0, padx=5, pady=5, sticky=(tk.W, tk.E))
         self.answer_entry.bind('<Return>', lambda e: self.submit_answer())
+        self._register_font('answer_entry', 'Microsoft YaHei UI', 14)
 
         button_frame = ctk.CTkFrame(parent, fg_color="transparent")
-        button_frame.grid(row=4, column=0, pady=12)
+        button_frame.grid(row=4, column=0, pady=8)
 
-        submit_btn = ctk.CTkButton(button_frame, text="✅ 提交答案", command=self.submit_answer, width=130, height=38, font=ctk.CTkFont(family='Microsoft YaHei UI', size=13, weight='bold'), fg_color="#27ae60", hover_color="#219a52")
-        submit_btn.grid(row=0, column=0, padx=8, pady=5)
+        self.btn_submit = ctk.CTkButton(button_frame, text="✅ 提交答案", command=self.submit_answer, width=130, height=34, font=ctk.CTkFont(family='Microsoft YaHei UI', size=13, weight='bold'), fg_color="#27ae60", hover_color="#219a52")
+        self.btn_submit.grid(row=0, column=0, padx=8, pady=5)
+        self.btn_skip = ctk.CTkButton(button_frame, text="⏭️ 跳过此题", command=self.skip_question, width=120, height=34, font=ctk.CTkFont(family='Microsoft YaHei UI', size=13), fg_color="#f39c12", hover_color="#d68910")
+        self.btn_skip.grid(row=0, column=1, padx=8, pady=5)
+        self.btn_show = ctk.CTkButton(button_frame, text="💡 查看答案", command=self.show_answer, width=120, height=34, font=ctk.CTkFont(family='Microsoft YaHei UI', size=13), fg_color="#8e44ad", hover_color="#7d3c98")
+        self.btn_show.grid(row=0, column=2, padx=8, pady=5)
+        self.btn_next = ctk.CTkButton(button_frame, text="➡️ 下一题", command=self.next_question, width=120, height=34, font=ctk.CTkFont(family='Microsoft YaHei UI', size=13), fg_color="#2980b9", hover_color="#2471a3")
+        self.btn_next.grid(row=0, column=3, padx=8, pady=5)
+        self._register_font('btn_submit', 'Microsoft YaHei UI', 13, weight='bold')
+        self._register_font('btn_skip', 'Microsoft YaHei UI', 13)
+        self._register_font('btn_show', 'Microsoft YaHei UI', 13)
+        self._register_font('btn_next', 'Microsoft YaHei UI', 13)
 
-        ctk.CTkButton(button_frame, text="⏭️ 跳过此题", command=self.skip_question, width=120, height=38, fg_color="#f39c12", hover_color="#d68910").grid(row=0, column=1, padx=8, pady=5)
-        ctk.CTkButton(button_frame, text="💡 查看答案", command=self.show_answer, width=120, height=38, fg_color="#8e44ad", hover_color="#7d3c98").grid(row=0, column=2, padx=8, pady=5)
-        ctk.CTkButton(button_frame, text="➡️ 下一题", command=self.next_question, width=120, height=38, fg_color="#2980b9", hover_color="#2471a3").grid(row=0, column=3, padx=8, pady=5)
-
-        ai_wrap, ai_frame = ctk_group(parent, "🦙 AI 判定结果 (本地智能分析)", padding=12)
-        ai_wrap.grid(row=5, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
-        parent.rowconfigure(5, weight=3)
+        ai_wrap, ai_frame, ai_title = ctk_group(parent, "🦙 AI 判定结果 (本地智能分析)", padding=10)
+        ai_wrap.grid(row=5, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=3)
+        parent.rowconfigure(5, weight=4)
         ai_frame.columnconfigure(0, weight=1)
         ai_frame.rowconfigure(0, weight=1)
+        self._register_font('ai_title', 'Microsoft YaHei UI', 13, weight='bold')
 
-        self.ai_result_text = ctk.CTkTextbox(ai_frame, height=200, font=ctk.CTkFont(family='Consolas', size=12))
+        self.ai_result_text = ctk.CTkTextbox(ai_frame, height=200, font=ctk.CTkFont(family='Consolas', size=11))
         self.ai_result_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        for _edit_keys in ('<Key>', '<BackSpace>', '<Delete>', '<Control-v>', '<Control-V>', '<Control-x>', '<Control-X>', '<Control-a>', '<Control-A>'):
+            self.ai_result_text.bind(_edit_keys, lambda e: "break")
+        self._register_font('ai_result_text', 'Consolas', 11)
 
         manual_judge_frame = ctk.CTkFrame(ai_frame, fg_color="transparent")
         manual_judge_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=8)
 
-        self.btn_mark_correct = ctk.CTkButton(manual_judge_frame, text="✅ 标记为正确", command=self.mark_as_correct, width=150, fg_color="#27ae60", hover_color="#219a52")
+        self.btn_mark_correct = ctk.CTkButton(manual_judge_frame, text="✅ 标记为正确", command=self.mark_as_correct, width=150, font=ctk.CTkFont(family='Microsoft YaHei UI', size=13), fg_color="#27ae60", hover_color="#219a52")
         self.btn_mark_correct.pack(side=tk.LEFT, padx=6)
 
-        self.btn_mark_wrong = ctk.CTkButton(manual_judge_frame, text="❌ 标记为错误", command=self.mark_as_wrong, width=150, fg_color="#c0392b", hover_color="#a93226")
+        self.btn_mark_wrong = ctk.CTkButton(manual_judge_frame, text="❌ 标记为错误", command=self.mark_as_wrong, width=150, font=ctk.CTkFont(family='Microsoft YaHei UI', size=13), fg_color="#c0392b", hover_color="#a93226")
         self.btn_mark_wrong.pack(side=tk.LEFT, padx=6)
+        self._register_font('btn_mark_correct', 'Microsoft YaHei UI', 13)
+        self._register_font('btn_mark_wrong', 'Microsoft YaHei UI', 13)
 
         self.last_judgment_info = None
 
-        act_wrap, action_frame = ctk_group(parent, "🎯 操作面板", padding=12)
-        act_wrap.grid(row=6, column=0, sticky=(tk.W, tk.E), pady=5)
+        act_wrap, action_frame, act_title = ctk_group(parent, "🎯 操作面板", padding=10)
+        act_wrap.grid(row=6, column=0, sticky=(tk.W, tk.E), pady=3)
+        self._register_font('act_title', 'Microsoft YaHei UI', 13, weight='bold')
 
-        ctk.CTkButton(action_frame, text="🔄 开始新一轮复习", command=self.start_new_round, width=160, fg_color="#8e44ad", hover_color="#7d3c98").grid(row=0, column=0, padx=8, pady=6)
-        ctk.CTkButton(action_frame, text="📥 导出错题本", command=self.export_wrong_answers, width=140, fg_color="#e67e22", hover_color="#ca6f1e").grid(row=0, column=1, padx=8, pady=6)
-        ctk.CTkButton(action_frame, text="📤 导出AI判定日志", command=self.export_ai_logs, width=160, fg_color="#16a085", hover_color="#138d75").grid(row=0, column=2, padx=8, pady=6)
-        ctk.CTkButton(action_frame, text="🗑️ 重置", command=self.reset_app, width=100, fg_color="#95a5a6", hover_color="#7f8c8d").grid(row=0, column=3, padx=8, pady=6)
+        self.btn_new_round = ctk.CTkButton(action_frame, text="🔄 开始新一轮复习", command=self.start_new_round, width=160, font=ctk.CTkFont(family='Microsoft YaHei UI', size=13), fg_color="#8e44ad", hover_color="#7d3c98")
+        self.btn_new_round.grid(row=0, column=0, padx=8, pady=6)
+        self.btn_export_wrong = ctk.CTkButton(action_frame, text="📥 导出错题本", command=self.export_wrong_answers, width=140, font=ctk.CTkFont(family='Microsoft YaHei UI', size=13), fg_color="#e67e22", hover_color="#ca6f1e")
+        self.btn_export_wrong.grid(row=0, column=1, padx=8, pady=6)
+        self.btn_export_log = ctk.CTkButton(action_frame, text="📤 导出AI判定日志", command=self.export_ai_logs, width=160, font=ctk.CTkFont(family='Microsoft YaHei UI', size=13), fg_color="#16a085", hover_color="#138d75")
+        self.btn_export_log.grid(row=0, column=2, padx=8, pady=6)
+        self.btn_reset = ctk.CTkButton(action_frame, text="🗑️ 重置", command=self.reset_app, width=100, font=ctk.CTkFont(family='Microsoft YaHei UI', size=13), fg_color="#95a5a6", hover_color="#7f8c8d")
+        self.btn_reset.grid(row=0, column=3, padx=8, pady=6)
+        self._register_font('btn_new_round', 'Microsoft YaHei UI', 13)
+        self._register_font('btn_export_wrong', 'Microsoft YaHei UI', 13)
+        self._register_font('btn_export_log', 'Microsoft YaHei UI', 13)
+        self._register_font('btn_reset', 'Microsoft YaHei UI', 13)
 
     def setup_settings_tab(self, parent):
         parent.columnconfigure(0, weight=1)
 
-        p_wrap, provider_frame = ctk_group(parent, "🌐 选择AI服务商", padding=15)
+        p_wrap, provider_frame, p_title = ctk_group(parent, "🌐 选择AI服务商", padding=15)
         p_wrap.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=8, padx=8)
         provider_frame.columnconfigure(1, weight=1)
+        self._register_font('p_title', 'Microsoft YaHei UI', 13, weight='bold')
 
         providers = self.ai_assistant.get_available_providers()
 
-        ctk.CTkLabel(provider_frame, text="AI提供商:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=13, weight='bold')).grid(row=0, column=0, sticky=tk.W, pady=6)
+        self.lbl_ai_provider = ctk.CTkLabel(provider_frame, text="AI提供商:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=13, weight='bold'))
+        self.lbl_ai_provider.grid(row=0, column=0, sticky=tk.W, pady=6)
+        self._register_font('lbl_ai_provider', 'Microsoft YaHei UI', 13, weight='bold')
         
-        self.provider_combo = ctk.CTkComboBox(provider_frame, values=list(providers.keys()), width=420, state='readonly', font=ctk.CTkFont(size=12))
+        self.provider_combo = ctk.CTkComboBox(provider_frame, values=list(providers.keys()), width=420, state='readonly', font=ctk.CTkFont(family='Microsoft YaHei UI', size=12))
         self.provider_combo.grid(row=0, column=1, padx=10, pady=6, sticky=(tk.W, tk.E))
         self.provider_combo.set(self.ai_assistant.ai_provider)
         self.provider_combo.configure(command=self.on_provider_change)
+        self._register_font('provider_combo', 'Microsoft YaHei UI', 12)
 
         self.provider_desc = ctk.CTkLabel(provider_frame, text="", font=ctk.CTkFont(family='Microsoft YaHei UI', size=11), text_color="#3498db", anchor="w", justify="left")
         self.provider_desc.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=4)
         self.update_provider_description()
+        self._register_font('provider_desc', 'Microsoft YaHei UI', 11)
 
-        o_wrap, ollama_frame = ctk_group(parent, "🦙 Ollama 配置 (推荐)", padding=15)
+        o_wrap, ollama_frame, o_title = ctk_group(parent, "🦙 Ollama 配置 (推荐)", padding=15)
         o_wrap.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=8, padx=8)
         ollama_frame.columnconfigure(1, weight=1)
+        self._register_font('o_title', 'Microsoft YaHei UI', 13, weight='bold')
 
-        ctk.CTkLabel(ollama_frame, text="Ollama服务地址:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=12)).grid(row=0, column=0, sticky=tk.W, pady=6)
-        self.ollama_url_entry = ctk.CTkEntry(ollama_frame, width=420, height=36, font=ctk.CTkFont(size=12))
+        self.lbl_ollama_url = ctk.CTkLabel(ollama_frame, text="Ollama服务地址:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=12))
+        self.lbl_ollama_url.grid(row=0, column=0, sticky=tk.W, pady=6)
+        self._register_font('lbl_ollama_url', 'Microsoft YaHei UI', 12)
+
+        self.ollama_url_entry = ctk.CTkEntry(ollama_frame, width=420, height=36, font=ctk.CTkFont(family='Microsoft YaHei UI', size=12))
         self.ollama_url_entry.grid(row=0, column=1, padx=10, pady=6, sticky=(tk.W, tk.E))
         self.ollama_url_entry.insert(0, self.ai_assistant.ollama_base_url)
+        self._register_font('ollama_url_entry', 'Microsoft YaHei UI', 12)
 
-        ctk.CTkButton(ollama_frame, text="检测连接", command=self.check_ollama_connection, width=110, fg_color="#16a085", hover_color="#138d75").grid(row=0, column=2, padx=5)
+        self.btn_check_ollama = ctk.CTkButton(ollama_frame, text="检测连接", command=self.check_ollama_connection, width=110, font=ctk.CTkFont(family='Microsoft YaHei UI', size=12), fg_color="#16a085", hover_color="#138d75")
+        self.btn_check_ollama.grid(row=0, column=2, padx=5)
+        self._register_font('btn_check_ollama', 'Microsoft YaHei UI', 12)
         
         self.ollama_status_label = ctk.CTkLabel(ollama_frame, text="状态: 未检测", font=ctk.CTkFont(family='Microsoft YaHei UI', size=11), anchor="w")
         self.ollama_status_label.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=3)
+        self._register_font('ollama_status_label', 'Microsoft YaHei UI', 11)
 
-        ctk.CTkLabel(ollama_frame, text="选择模型:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=12)).grid(row=2, column=0, sticky=tk.W, pady=6)
+        self.lbl_model = ctk.CTkLabel(ollama_frame, text="选择模型:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=12))
+        self.lbl_model.grid(row=2, column=0, sticky=tk.W, pady=6)
+        self._register_font('lbl_model', 'Microsoft YaHei UI', 12)
         
-        self.model_combo = ctk.CTkComboBox(ollama_frame, values=[], width=420, height=36, font=ctk.CTkFont(size=12))
+        self.model_combo = ctk.CTkComboBox(ollama_frame, values=[], width=420, height=36, font=ctk.CTkFont(family='Microsoft YaHei UI', size=12))
         self.model_combo.grid(row=2, column=1, columnspan=2, padx=10, pady=6, sticky=(tk.W, tk.E))
+        self._register_font('model_combo', 'Microsoft YaHei UI', 12)
         
-        ctk.CTkButton(ollama_frame, text="刷新模型列表", command=self.refresh_ollama_models, fg_color="#2980b9", hover_color="#2471a3").grid(row=3, column=0, columnspan=3, pady=8)
+        self.btn_refresh_models = ctk.CTkButton(ollama_frame, text="刷新模型列表", command=self.refresh_ollama_models, font=ctk.CTkFont(family='Microsoft YaHei UI', size=12), fg_color="#2980b9", hover_color="#2471a3")
+        self.btn_refresh_models.grid(row=3, column=0, columnspan=3, pady=8)
+        self._register_font('btn_refresh_models', 'Microsoft YaHei UI', 12)
 
         self.update_model_list()
 
-        api_wrap, other_api_frame = ctk_group(parent, "🔑 其他AI API密钥 (可选)", padding=15)
+        api_wrap, other_api_frame, api_title = ctk_group(parent, "🔑 其他AI API密钥 (可选)", padding=15)
         api_wrap.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=8, padx=8)
         other_api_frame.columnconfigure(1, weight=1)
+        self._register_font('api_title', 'Microsoft YaHei UI', 13, weight='bold')
 
-        ctk.CTkLabel(other_api_frame, text="API Key:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=12)).grid(row=0, column=0, sticky=tk.W, pady=6)
-        self.api_key_entry = ctk.CTkEntry(other_api_frame, width=420, height=36, show="•", font=ctk.CTkFont(size=12))
+        self.lbl_api_key = ctk.CTkLabel(other_api_frame, text="API Key:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=12))
+        self.lbl_api_key.grid(row=0, column=0, sticky=tk.W, pady=6)
+        self._register_font('lbl_api_key', 'Microsoft YaHei UI', 12)
+
+        self.api_key_entry = ctk.CTkEntry(other_api_frame, width=420, height=36, show="•", font=ctk.CTkFont(family='Microsoft YaHei UI', size=12))
         self.api_key_entry.grid(row=0, column=1, padx=10, pady=6, sticky=(tk.W, tk.E))
         if self.ai_assistant.api_key:
             self.api_key_entry.insert(0, self.ai_assistant.api_key)
+        self._register_font('api_key_entry', 'Microsoft YaHei UI', 12)
 
         self.use_ai_var = ctk.BooleanVar(value=self.ai_assistant.use_ai)
-        ai_check = ctk.CTkSwitch(other_api_frame, text="启用AI智能判定", variable=self.use_ai_var, font=ctk.CTkFont(size=12))
-        ai_check.grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=(12, 6), padx=2)
+        self.ai_switch = ctk.CTkSwitch(other_api_frame, text="启用AI智能判定", variable=self.use_ai_var, font=ctk.CTkFont(family='Microsoft YaHei UI', size=12))
+        self.ai_switch.grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=(12, 6), padx=2)
+        self._register_font('ai_switch', 'Microsoft YaHei UI', 12)
 
         self.clean_paren_var = ctk.BooleanVar(value=self.ai_assistant.clean_parentheses)
-        paren_check = ctk.CTkSwitch(other_api_frame, text="自动忽略括号说明（推荐开启）\n例：苹果（复数） 等价于 苹果；防止括号内容干扰AI判定", variable=self.clean_paren_var, font=ctk.CTkFont(size=12))
-        paren_check.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=6, padx=2)
+        self.paren_check = ctk.CTkSwitch(other_api_frame, text="自动忽略括号说明（推荐开启）\n例：苹果（复数） 等价于 苹果；防止括号内容干扰AI判定", variable=self.clean_paren_var, font=ctk.CTkFont(family='Microsoft YaHei UI', size=12))
+        self.paren_check.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=6, padx=2)
+        self._register_font('paren_check', 'Microsoft YaHei UI', 12)
 
-        ctk.CTkButton(other_api_frame, text="💾 保存所有设置", command=self.save_ai_settings, height=40, font=ctk.CTkFont(size=13, weight='bold'), fg_color="#27ae60", hover_color="#219a52").grid(row=3, column=0, columnspan=2, pady=15)
+        self.btn_save_settings = ctk.CTkButton(other_api_frame, text="💾 保存所有设置", command=self.save_ai_settings, height=40, font=ctk.CTkFont(family='Microsoft YaHei UI', size=13, weight='bold'), fg_color="#27ae60", hover_color="#219a52")
+        self.btn_save_settings.grid(row=3, column=0, columnspan=2, pady=15)
+        self._register_font('btn_save_settings', 'Microsoft YaHei UI', 13, weight='bold')
 
 
 
@@ -859,15 +1095,38 @@ class CSVLearningApp:
     def check_ollama_connection(self):
         url = self.ollama_url_entry.get().strip() or 'http://localhost:11434'
         self.ai_assistant.set_ollama_base_url(url)
-        
+
         self.ollama_status_label.configure(text="状态: 检测中...", text_color="#f39c12")
-        self.root.update()
-        
-        if self.ai_assistant.check_ollama_running():
+
+        if self.ai_assistant._check_ollama_http():
             self.ollama_status_label.configure(text=f"状态: ✅ 已连接 ({url})", text_color="#2ecc71")
             self.refresh_ollama_models()
-        else:
-            self.ollama_status_label.configure(text=f"状态: ❌ 无法连接 ({url})", text_color="#e74c3c")
+            return
+
+        exe = self.ai_assistant.find_ollama_executable()
+        if not exe:
+            self.ollama_status_label.configure(text=f"状态: ❌ 未找到 Ollama 程序", text_color="#e74c3c")
+            return
+
+        self.ollama_status_label.configure(text="状态: 🦙 尝试自动启动 Ollama...", text_color="#f39c12")
+
+        def worker():
+            started = self.ai_assistant.start_ollama()
+            if started:
+                for i in range(30):
+                    time.sleep(1)
+                    if self.ai_assistant._check_ollama_http():
+                        self.root.after(0, lambda: self._ollama_conn_success(url))
+                        return
+            self.root.after(0, lambda: self.ollama_status_label.configure(
+                text=f"状态: ❌ 自动启动超时 ({url})", text_color="#e74c3c"
+            ))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _ollama_conn_success(self, url):
+        self.ollama_status_label.configure(text=f"状态: ✅ 已连接 ({url})", text_color="#2ecc71")
+        self.refresh_ollama_models()
 
     def refresh_ollama_models(self):
         models = self.ai_assistant.get_ollama_models()
@@ -920,7 +1179,7 @@ class CSVLearningApp:
         if not self.ai_assistant.use_ai:
             self.ai_status_label.configure(text="AI: 已禁用", text_color="#95a5a6")
         elif provider == 'ollama':
-            if self.ai_assistant.check_ollama_running():
+            if self.ai_assistant._check_ollama_http():
                 model_info = f" ({self.ai_assistant.model})" if self.ai_assistant.model else ""
                 self.ai_status_label.configure(text=f"🦙 Ollama{model_info}", text_color="#2ecc71")
             else:
@@ -974,13 +1233,13 @@ class CSVLearningApp:
                 
                 if self.ai_assistant.use_ai:
                     if provider == 'ollama':
-                        if self.ai_assistant.check_ollama_running():
+                        if self.ai_assistant._check_ollama_http():
                             model_info = f" ({self.ai_assistant.model})" if self.ai_assistant.model else ""
                             self.ai_result_text.insert(tk.END, f"🦙 使用Ollama本地AI{model_info}\n")
                             self.ai_result_text.insert(tk.END, "   完全免费、隐私安全、无需联网\n")
                         else:
-                            self.ai_result_text.insert(tk.END, f"⚠️ Ollama未运行，将使用本地算法\n")
-                            self.ai_result_text.insert(tk.END, "   请启动Ollama或在'AI设置'中切换\n")
+                            self.ai_result_text.insert(tk.END, "🦙 Ollama 未运行，正在尝试自动启动...\n")
+                            self._ensure_ollama_running_async(silent=False)
                     elif provider != 'local':
                         providers = self.ai_assistant.get_available_providers()
                         provider_name = providers.get(provider, {}).get('name', 'AI')
@@ -1194,6 +1453,27 @@ class CSVLearningApp:
             self._last_correct_answer = correct_answer
             self.ai_assistant._last_user_answer = user_answer
             self.ai_assistant._last_correct_answer = correct_answer
+
+            if self.ai_assistant.ai_provider == 'ollama' and not self.ai_assistant._check_ollama_http():
+                self.root.after(0, lambda: self.ai_result_text.insert(tk.END, "🦙 Ollama 未运行，正在后台启动...\n") or self.ai_result_text.see(tk.END))
+                started = self.ai_assistant.start_ollama()
+                if started:
+                    for i in range(30):
+                        time.sleep(1)
+                        if self.ai_assistant._check_ollama_http():
+                            self.root.after(0, lambda: self.ai_result_text.insert(tk.END, "✅ Ollama 已就绪\n") or self.ai_result_text.see(tk.END))
+                            break
+                    else:
+                        self.root.after(0, lambda: self.ai_result_text.insert(tk.END, "⚠️ Ollama 启动超时，改用本地算法\n") or self.ai_result_text.see(tk.END))
+                        self.root.after(0, lambda: self.update_ai_status())
+                        self.root.after(0, lambda: self.submit_local(user_answer, correct_answer, col1, col2))
+                        return
+                else:
+                    self.root.after(0, lambda: self.ai_result_text.insert(tk.END, "⚠️ 未找到 Ollama，改用本地算法\n") or self.ai_result_text.see(tk.END))
+                    self.root.after(0, lambda: self.update_ai_status())
+                    self.root.after(0, lambda: self.submit_local(user_answer, correct_answer, col1, col2))
+                    return
+
             ai_result = self.ai_assistant.ai_judge_with_ai(user_answer, correct_answer, col1, col2)
 
             self.root.after(0, lambda: self.display_ai_result(
