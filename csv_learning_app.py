@@ -784,15 +784,28 @@ class CSVLearningApp:
         scale = min(w / self._base_w, h / self._base_h)
         return max(0.55, min(scale, 2.2))
 
+    def _compute_question_scale(self):
+        if not hasattr(self, 'q_wrap') or self.q_wrap is None:
+            return self._compute_scale()
+        h = max(self.q_wrap.winfo_height(), 50)
+        q_scale = h / 175
+        return max(0.5, min(q_scale, 2.0))
+
     def _update_all_font_sizes(self):
-        scale = self._compute_scale()
-        ui_scale = max(0.7, min(scale, 2.0))
+        win_scale = self._compute_scale()
+        ui_scale = max(0.7, min(win_scale, 2.0))
+        q_scale = self._compute_question_scale()
         for attr_name, (family, base_size, kwargs) in self._font_specs.items():
             try:
                 widget = getattr(self, attr_name, None)
                 if widget is None:
                     continue
-                new_size = max(6, int(round(base_size * ui_scale))) if base_size <= 16 else max(10, int(round(base_size * scale)))
+                if base_size > 16 and attr_name in ('col1_label', 'col1_value', 'col2_label', 'col2_value'):
+                    new_size = max(10, int(round(base_size * q_scale)))
+                elif base_size <= 16:
+                    new_size = max(6, int(round(base_size * ui_scale)))
+                else:
+                    new_size = max(10, int(round(base_size * win_scale)))
                 widget.configure(font=ctk.CTkFont(family=family, size=new_size, **kwargs))
             except Exception:
                 pass
@@ -819,8 +832,22 @@ class CSVLearningApp:
 
     def setup_learning_tab(self, parent):
         parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(0, weight=1)
 
-        file_wrap, file_frame, file_title = ctk_group(parent, "📁 文件操作", padding=10)
+        main_paned = tk.PanedWindow(parent, orient=tk.VERTICAL, sashwidth=6, sashrelief=tk.RAISED, bg="#1a1a2e")
+        main_paned.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
+
+        top_frame = ctk.CTkFrame(main_paned, fg_color="transparent")
+        bottom_frame = ctk.CTkFrame(main_paned, fg_color="transparent")
+        main_paned.add(top_frame, minsize=220)
+        main_paned.add(bottom_frame, minsize=150)
+        main_paned.bind('<Configure>', lambda e: self._update_all_font_sizes() if e.widget is main_paned else None)
+
+        top_frame.columnconfigure(0, weight=1)
+        bottom_frame.columnconfigure(0, weight=1)
+        bottom_frame.rowconfigure(0, weight=1)
+
+        file_wrap, file_frame, file_title = ctk_group(top_frame, "📁 文件操作", padding=10)
         file_wrap.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=3)
         self._register_font('file_title', 'Microsoft YaHei UI', 13, weight='bold')
 
@@ -838,7 +865,7 @@ class CSVLearningApp:
         self.file_label.grid(row=0, column=3, padx=15, sticky=tk.W)
         self._register_font('file_label', 'Microsoft YaHei UI', 12)
 
-        info_wrap, info_frame, info_title = ctk_group(parent, "📊 进度信息", padding=10)
+        info_wrap, info_frame, info_title = ctk_group(top_frame, "📊 进度信息", padding=10)
         info_wrap.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=3)
         for c in range(6):
             info_frame.columnconfigure(c, weight=1)
@@ -872,18 +899,18 @@ class CSVLearningApp:
         self._update_paren_tooltip()
         self._register_font('paren_switch_main', 'Microsoft YaHei UI', 12)
 
-        q_wrap = ctk.CTkFrame(parent, fg_color="#1e272e", corner_radius=10, height=175)
-        q_wrap.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=3)
-        parent.rowconfigure(2, weight=0)
-        q_wrap.grid_propagate(False)
-        q_wrap.columnconfigure(0, weight=1)
-        q_wrap.rowconfigure(1, weight=1)
+        self.q_wrap = ctk.CTkFrame(top_frame, fg_color="#1e272e", corner_radius=10)
+        self.q_wrap.grid(row=2, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=3)
+        top_frame.rowconfigure(2, weight=1)
+        self.q_wrap.columnconfigure(0, weight=1)
+        self.q_wrap.rowconfigure(1, weight=1)
+        self.q_wrap.bind('<Configure>', lambda e: self._update_all_font_sizes() if e.widget is self.q_wrap else None)
 
-        self.q_title = ctk.CTkLabel(q_wrap, text="❓ 当前题目", font=ctk.CTkFont(family='Microsoft YaHei UI', size=13, weight='bold'), text_color="#ecf0f1")
+        self.q_title = ctk.CTkLabel(self.q_wrap, text="❓ 当前题目", font=ctk.CTkFont(family='Microsoft YaHei UI', size=13, weight='bold'), text_color="#ecf0f1")
         self.q_title.grid(row=0, column=0, sticky=tk.W, padx=12, pady=(6, 2))
         self._register_font('q_title', 'Microsoft YaHei UI', 13, weight='bold')
 
-        q_scroll = ctk.CTkScrollableFrame(q_wrap, fg_color="transparent", scrollbar_button_color="#3498db", scrollbar_button_hover_color="#2980b9")
+        q_scroll = ctk.CTkScrollableFrame(self.q_wrap, fg_color="transparent", scrollbar_button_color="#3498db", scrollbar_button_hover_color="#2980b9")
         q_scroll.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=12, pady=(2, 6))
         q_scroll.columnconfigure(1, weight=1)
 
@@ -902,7 +929,7 @@ class CSVLearningApp:
         self._register_font('col2_value', 'Microsoft YaHei UI', 26, slant='italic')
         q_scroll.columnconfigure(3, weight=1)
 
-        a_wrap, answer_frame, ans_title = ctk_group(parent, "✍️ 你的答案 (第三列)", padding=10)
+        a_wrap, answer_frame, ans_title = ctk_group(top_frame, "✍️ 你的答案 (第三列)", padding=10)
         a_wrap.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=3)
         answer_frame.columnconfigure(0, weight=1)
         self._register_font('ans_title', 'Microsoft YaHei UI', 13, weight='bold')
@@ -912,7 +939,7 @@ class CSVLearningApp:
         self.answer_entry.bind('<Return>', lambda e: self.submit_answer())
         self._register_font('answer_entry', 'Microsoft YaHei UI', 14)
 
-        button_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        button_frame = ctk.CTkFrame(top_frame, fg_color="transparent")
         button_frame.grid(row=4, column=0, pady=8)
 
         self.btn_submit = ctk.CTkButton(button_frame, text="✅ 提交答案", command=self.submit_answer, width=130, height=34, font=ctk.CTkFont(family='Microsoft YaHei UI', size=13, weight='bold'), fg_color="#27ae60", hover_color="#219a52")
@@ -928,14 +955,13 @@ class CSVLearningApp:
         self._register_font('btn_show', 'Microsoft YaHei UI', 13)
         self._register_font('btn_next', 'Microsoft YaHei UI', 13)
 
-        ai_wrap, ai_frame, ai_title = ctk_group(parent, "🦙 AI 判定结果 (本地智能分析)", padding=10)
-        ai_wrap.grid(row=5, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=3)
-        parent.rowconfigure(5, weight=4)
+        ai_wrap, ai_frame, ai_title = ctk_group(bottom_frame, "🦙 AI 判定结果 (本地智能分析)", padding=10)
+        ai_wrap.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=3)
         ai_frame.columnconfigure(0, weight=1)
         ai_frame.rowconfigure(0, weight=1)
         self._register_font('ai_title', 'Microsoft YaHei UI', 13, weight='bold')
 
-        self.ai_result_text = ctk.CTkTextbox(ai_frame, height=200, font=ctk.CTkFont(family='Consolas', size=11))
+        self.ai_result_text = ctk.CTkTextbox(ai_frame, font=ctk.CTkFont(family='Consolas', size=11))
         self.ai_result_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         for _edit_keys in ('<Key>', '<BackSpace>', '<Delete>', '<Control-v>', '<Control-V>', '<Control-x>', '<Control-X>', '<Control-a>', '<Control-A>'):
             self.ai_result_text.bind(_edit_keys, lambda e: "break")
@@ -954,8 +980,8 @@ class CSVLearningApp:
 
         self.last_judgment_info = None
 
-        act_wrap, action_frame, act_title = ctk_group(parent, "🎯 操作面板", padding=10)
-        act_wrap.grid(row=6, column=0, sticky=(tk.W, tk.E), pady=3)
+        act_wrap, action_frame, act_title = ctk_group(bottom_frame, "🎯 操作面板", padding=10)
+        act_wrap.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=3)
         self._register_font('act_title', 'Microsoft YaHei UI', 13, weight='bold')
 
         self.btn_new_round = ctk.CTkButton(action_frame, text="🔄 开始新一轮复习", command=self.start_new_round, width=160, font=ctk.CTkFont(family='Microsoft YaHei UI', size=13), fg_color="#8e44ad", hover_color="#7d3c98")
@@ -1142,6 +1168,8 @@ class CSVLearningApp:
             
             self.ollama_status_label.configure(text=f"状态: ✅ 已连接 - 找到 {len(models)} 个模型", text_color="#2ecc71")
         else:
+            self.model_combo.configure(values=[])
+            self.model_combo.set("")
             self.ollama_status_label.configure(text="状态: ⚠️ 已连接但未找到模型，请先下载模型", text_color="#f39c12")
 
     def save_ai_settings(self):
