@@ -681,6 +681,8 @@ class CSVLearningApp:
         self.root = root
         self.root.title("📚 词汇学习默写工具 - 🦙 Ollama AI版")
         self.geometry("1100x900")
+        # 下限：低于这个尺寸，题目区与 AI 结果区无法同时保证可读
+        self.root.minsize(720, 560)
 
         self.current_csv_data = []
         self.current_index = 0
@@ -982,8 +984,10 @@ class CSVLearningApp:
 
         top_frame = ctk.CTkFrame(main_paned, fg_color="#2b2b2b")
         bottom_frame = ctk.CTkFrame(main_paned, fg_color="#2b2b2b")
-        main_paned.add(top_frame, minsize=220)
-        main_paned.add(bottom_frame, minsize=150)
+        main_paned.add(top_frame, minsize=200)
+        # 下半区至少要放得下「AI结果 + 手动判定 + 操作面板」，原150 不够，
+        # 低分辨率下 AI 结果区会被操作面板压住，这里按实际需求抬高下限。
+        main_paned.add(bottom_frame, minsize=260)
         main_paned.bind('<Configure>', lambda e: self._update_all_font_sizes() if e.widget is main_paned else None)
 
         top_frame.columnconfigure(0, weight=1)
@@ -1097,10 +1101,19 @@ class CSVLearningApp:
         self._register_font('btn_show', 'Microsoft YaHei UI', 13)
         self._register_font('btn_next', 'Microsoft YaHei UI', 13)
 
-        ai_wrap, ai_frame, ai_title = ctk_group(bottom_frame, "🦙 AI 判定结果 (本地智能分析)", padding=10)
+        bottom_scroll = ctk.CTkScrollableFrame(
+            bottom_frame, fg_color="transparent",
+            scrollbar_button_color="#3498db", scrollbar_button_hover_color="#2980b9")
+        bottom_scroll.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        bottom_scroll.columnconfigure(0, weight=1)
+        self.bottom_scroll = bottom_scroll
+
+        ai_wrap, ai_frame, ai_title = ctk_group(bottom_scroll, "🦙 AI 判定结果 (本地智能分析)", padding=10)
         ai_wrap.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=3)
         ai_frame.columnconfigure(0, weight=1)
-        ai_frame.rowconfigure(0, weight=1)
+        # row0 是文本框，给固定最小高度，保证任何分辨率下都留有可读区域
+        ai_frame.rowconfigure(0, weight=1, minsize=100)
+        self.ai_frame = ai_frame
         self._register_font('ai_title', 'Microsoft YaHei UI', 13, weight='bold')
 
         self.ai_result_text = ctk.CTkTextbox(ai_frame, font=ctk.CTkFont(family='Consolas', size=11))
@@ -1108,6 +1121,9 @@ class CSVLearningApp:
         for _edit_keys in ('<Key>', '<BackSpace>', '<Delete>', '<Control-v>', '<Control-V>', '<Control-x>', '<Control-X>', '<Control-a>', '<Control-A>'):
             self.ai_result_text.bind(_edit_keys, lambda e: "break")
         self._register_font('ai_result_text', 'Consolas', 11)
+        # 兜底高度：AI 判定结果是这个应用的核心输出，任何情况下都不允许被压成 0
+        self.ai_result_text.grid_propagate(False)
+        self.ai_result_text.configure(height=90)
 
         manual_judge_frame = ctk.CTkFrame(ai_frame, fg_color="transparent")
         manual_judge_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=8)
@@ -1122,7 +1138,7 @@ class CSVLearningApp:
 
         self.last_judgment_info = None
 
-        act_wrap, action_frame, act_title = ctk_group(bottom_frame, "🎯 操作面板", padding=10)
+        act_wrap, action_frame, act_title = ctk_group(bottom_scroll, "🎯 操作面板", padding=10)
         act_wrap.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=3)
         self._register_font('act_title', 'Microsoft YaHei UI', 13, weight='bold')
 
