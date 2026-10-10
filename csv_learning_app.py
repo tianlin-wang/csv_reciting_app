@@ -7,6 +7,7 @@ import shutil
 import datetime
 import tkinter as tk
 from tkinter import filedialog, messagebox
+import tkinter.font as tkfont
 import difflib
 import re
 import json
@@ -15,6 +16,9 @@ import customtkinter as ctk
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
+
+# 文本测宽用的字体对象缓存，避免每次自适应都新建 tkfont
+_MEASURE_CACHE = {}
 
 
 def strip_parentheses(s, assistant=None):
@@ -694,6 +698,7 @@ class CSVLearningApp:
         self._font_specs = {}
         self._base_w = 1100
         self._base_h = 900
+        self._question_size_cache = {}
 
         self.setup_ui()
         self._last_resize_size = (0, 0)
@@ -841,31 +846,112 @@ class CSVLearningApp:
         scale = min(w / self._base_w, h / self._base_h)
         return max(0.55, min(scale, 2.2))
 
-    def _compute_question_scale(self):
-        if not hasattr(self, 'q_wrap') or self.q_wrap is None:
-            return self._compute_scale()
-        h = max(self.q_wrap.winfo_height(), 50)
-        q_scale = h / 175
-        return max(0.5, min(q_scale, 2.0))
+    @staticmethod
+    def _text_px(text, size, bold=False):
+        """量出某段文本在给定字号下的像素宽度（按字号缓存测量字体）。"""
+        if not text:
+            return 0
+        key = (size, bold)
+        font = _MEASURE_CACHE.get(key)
+        if font is None:
+            font = tkfont.Font(family="Microsoft YaHei UI", size=size,
+                               weight="bold" if bold else "normal")
+            _MEASURE_CACHE[key] = font
+        return font.measure(text)
+
+    def _update_question_fonts(self):
+        """单词/词性字号自适应：依据文本实测宽度 + 容器可用宽高。
+
+        列宽由 grid 的 weight 分配而来，和字号互为因果（字号大→列宽大），
+        所以这里做几轮迭代：用当前字号渲染后读回真实列宽，再按需收缩，
+        直到文本不再溢出或字号触底。
+        """
+        q_wrap = getattr(self, "q_wrap", None)
+        q_scroll = getattr(self, "q_scroll", None)
+        if q_wrap is None or q_scroll is None:
+            return
+
+        wrap_w = q_wrap.winfo_width()
+        wrap_h = q_wrap.winfo_height()
+        if wrap_w < 50 or q_scroll.winfo_width() < 50:
+            return
+
+        # 单行可用高度（扣掉标题行与内边距）
+        inner_h = max(wrap_h - 34, 20)
+
+        label_size = max(13, min(16, int(self._compute_scale() * 14)))
+
+        t1 = self.col1_value.cget("text") or ""
+        t2 = self.col2_value.cget("text") or ""
+
+        cache_key = (t1, t2, wrap_w, inner_h, label_size)
+        if self._question_size_cache.get("key") == cache_key:
+            return
+        self._question_size_cache["key"] = cache_key
+
+        # 标签固定小号，不随内容放大
+        label_font = ctk.CTkFont(family="Microsoft YaHei UI", size=label_size, weight="bold")
+        self.col1_label.configure(font=label_font)
+        self.col2_label.configure(font=label_font)
+
+        def apply(word_size, pos_size):
+            self.col1_value.configure(
+                font=ctk.CTkFont(family="Microsoft YaHei UI", size=word_size, weight="bold"))
+            self.col2_value.configure(
+                font=ctk.CTkFont(family="Microsoft YaHei UI", size=pos_size, slant="italic"))
+
+        # 高度上限
+        word_max = 54
+        pos_max = 34
+        if inner_h > 0:
+            cap = int(inner_h * 0.85 / 1.35)
+            word_max = max(12, min(word_max, cap))
+            pos_max = max(11, min(pos_max, cap))
+
+        word_size, pos_size = word_max, min(pos_max, max(12, int(word_max * 0.62)))
+        apply(word_size, pos_size)
+
+        # 迭代收敛：读回真实列宽，超出则收缩
+        for _ in range(6):
+            self.root.update_idletasks()
+            avail1 = self.col1_value.winfo_width()
+            avail2 = self.col2_value.winfo_width()
+            if avail1 < 20 or avail2 < 20:
+                break
+            need1 = self._text_px(t1, word_size, True)
+            need2 = self._text_px(t2, pos_size, False)
+            # 4% 余量，规避测量与实际排版的细微差异
+            over1 = need1 > avail1 * 0.96
+            over2 = need2 > avail2 * 0.96
+            if not over1 and not over2:
+                break
+            if over1:
+                word_size = max(12, int(word_size * (avail1 * 0.96 / need1)) - 1)
+            if over2:
+                pos_size = max(11, int(pos_size * min(1.0, avail2 * 0.96 / need2)) - 1)
+            # 词性不超过单词的 62%
+            pos_size = min(pos_size, max(12, int(word_size * 0.62)))
+            apply(word_size, pos_size)
 
     def _update_all_font_sizes(self):
         win_scale = self._compute_scale()
         ui_scale = max(0.7, min(win_scale, 2.0))
-        q_scale = self._compute_question_scale()
+        question_attrs = ('col1_label', 'col1_value', 'col2_label', 'col2_value')
         for attr_name, (family, base_size, kwargs) in self._font_specs.items():
+            if attr_name in question_attrs:
+                continue
             try:
                 widget = getattr(self, attr_name, None)
                 if widget is None:
                     continue
-                if base_size > 16 and attr_name in ('col1_label', 'col1_value', 'col2_label', 'col2_value'):
-                    new_size = max(10, int(round(base_size * q_scale)))
-                elif base_size <= 16:
+                if base_size <= 16:
                     new_size = max(6, int(round(base_size * ui_scale)))
                 else:
                     new_size = max(10, int(round(base_size * win_scale)))
                 widget.configure(font=ctk.CTkFont(family=family, size=new_size, **kwargs))
             except Exception:
                 pass
+        self._update_question_fonts()
 
     def setup_ui(self):
         main_frame = ctk.CTkFrame(self.root, fg_color="transparent")
@@ -969,22 +1055,21 @@ class CSVLearningApp:
 
         q_scroll = ctk.CTkScrollableFrame(self.q_wrap, fg_color="transparent", scrollbar_button_color="#3498db", scrollbar_button_hover_color="#2980b9")
         q_scroll.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=12, pady=(2, 6))
-        q_scroll.columnconfigure(1, weight=1)
+        self.q_scroll = q_scroll
 
-        self.col1_label = ctk.CTkLabel(q_scroll, text="📝 单词:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=22, weight='bold'), text_color="#3498db")
+        self.col1_label = ctk.CTkLabel(q_scroll, text="📝 单词:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=14, weight='bold'), text_color="#3498db")
         self.col1_label.grid(row=0, column=0, sticky=tk.W, pady=5)
         self.col1_value = ctk.CTkLabel(q_scroll, text="-", font=ctk.CTkFont(family='Microsoft YaHei UI', size=32, weight='bold'), text_color="#5dade2", anchor="w", justify="left")
         self.col1_value.grid(row=0, column=1, sticky=(tk.W, tk.E), pady=5, padx=12)
-        self._register_font('col1_label', 'Microsoft YaHei UI', 22, weight='bold')
-        self._register_font('col1_value', 'Microsoft YaHei UI', 32, weight='bold')
 
-        self.col2_label = ctk.CTkLabel(q_scroll, text="🏷️ 词性:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=22, weight='bold'), text_color="#e74c3c")
+        self.col2_label = ctk.CTkLabel(q_scroll, text="🏷️ 词性:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=14, weight='bold'), text_color="#e74c3c")
         self.col2_label.grid(row=0, column=2, sticky=tk.W, pady=5, padx=(20, 0))
         self.col2_value = ctk.CTkLabel(q_scroll, text="-", font=ctk.CTkFont(family='Microsoft YaHei UI', size=26, slant='italic'), text_color="#ec7063", anchor="w", justify="left")
         self.col2_value.grid(row=0, column=3, sticky=(tk.W, tk.E), pady=5, padx=12)
-        self._register_font('col2_label', 'Microsoft YaHei UI', 22, weight='bold')
-        self._register_font('col2_value', 'Microsoft YaHei UI', 26, slant='italic')
-        q_scroll.columnconfigure(3, weight=1)
+
+        # 单词区与词性区按 3:2 分配剩余宽度，避免单词过长把词性挤出可视区
+        q_scroll.columnconfigure(1, weight=3, minsize=120)
+        q_scroll.columnconfigure(3, weight=2, minsize=90)
 
         a_wrap, answer_frame, ans_title = ctk_group(top_frame, "✍️ 你的答案 (第三列)", padding=10)
         a_wrap.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=3)
@@ -1487,8 +1572,17 @@ class CSVLearningApp:
             self.answer_entry.delete(0, tk.END)
             self.answer_entry.focus_set()
             self.update_progress()
+            self._refit_question_fonts()
         else:
             self.finish_round()
+
+    def _refit_question_fonts(self):
+        """题目文本变化后重算字号。布局尚未稳定时交给 <Configure> 兜底。"""
+        self._question_size_cache.clear()
+        q_wrap = getattr(self, "q_wrap", None)
+        if q_wrap is None or q_wrap.winfo_width() < 50:
+            return
+        self.root.after_idle(self._update_question_fonts)
 
     def update_progress(self):
         self.round_label.configure(text=f"轮次: {self.current_round}")
@@ -1800,6 +1894,7 @@ class CSVLearningApp:
         self.col1_value.configure(text="🎊 本轮完成!")
         self.col2_value.configure(text="")
         self.answer_entry.delete(0, tk.END)
+        self._refit_question_fonts()
 
     def start_new_round(self):
         if not self.wrong_answers:
@@ -1924,6 +2019,7 @@ class CSVLearningApp:
         self.ai_result_text.delete(1.0, tk.END)
         self.update_progress()
         self.update_ai_status()
+        self._refit_question_fonts()
 
 
 import sys
