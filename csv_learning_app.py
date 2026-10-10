@@ -615,6 +615,63 @@ def ctk_group(parent, title, padding=15):
     return frame, inner, lbl
 
 
+class _FlatTabView(ctk.CTkFrame):
+    """无边框的 tab 容器。
+
+    CTkTabview 内部用带圆角的 canvas 绘制内容区，在 dark 主题下会在容器四周
+    留下一圈1px 浅色渲染缝。这里改用 CTkFrame + CTkSegmentedButton 自己拼，
+    所有控件都是纯色填充，边缘不会有缝。
+    """
+
+    def __init__(self, master):
+        super().__init__(master, fg_color="#2b2b2b", corner_radius=0)
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
+
+        self._tab_dict = {}
+        self._name_list = []
+        self._current_name = ""
+
+        self._bar = ctk.CTkSegmentedButton(
+            self,
+            values=[],
+            height=30,
+            corner_radius=0,
+            border_width=0,
+            fg_color="#2b2b2b",
+            selected_color="#3B8ED0",
+            selected_hover_color="#36719F",
+            unselected_color="#2b2b2b",
+            unselected_hover_color="#3a3a3a",
+            text_color="#DCE4EE",
+            font=ctk.CTkFont(family="Microsoft YaHei UI", size=12),
+            command=self._on_select,
+        )
+        self._bar.grid(row=0, column=0, padx=0, pady=(4, 4))
+
+    def add(self, name):
+        frame = ctk.CTkFrame(self, fg_color="#2b2b2b", corner_radius=0)
+        self._tab_dict[name] = frame
+        self._name_list.append(name)
+        self._bar.configure(values=list(self._name_list))
+
+        if not self._current_name:
+            self._current_name = name
+            self._bar.set(name)
+            frame.grid(row=1, column=0, sticky="nsew")
+        return frame
+
+    def _on_select(self, name):
+        if name == self._current_name:
+            return
+        self._tab_dict[self._current_name].grid_forget()
+        self._current_name = name
+        self._tab_dict[name].grid(row=1, column=0, sticky="nsew")
+
+    def tab(self, name):
+        return self._tab_dict[name]
+
+
 class CSVLearningApp:
     def __init__(self, root):
         self.root = root
@@ -819,7 +876,7 @@ class CSVLearningApp:
         main_frame.columnconfigure(0, weight=1)
         main_frame.rowconfigure(0, weight=1)
 
-        notebook = ctk.CTkTabview(main_frame)
+        notebook = _FlatTabView(main_frame)
         notebook.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
 
         learning_tab = notebook.add("📚 学习模式")
@@ -834,11 +891,11 @@ class CSVLearningApp:
         parent.columnconfigure(0, weight=1)
         parent.rowconfigure(0, weight=1)
 
-        main_paned = tk.PanedWindow(parent, orient=tk.VERTICAL, sashwidth=6, sashrelief=tk.RAISED, bg="#1a1a2e")
+        main_paned = tk.PanedWindow(parent, orient=tk.VERTICAL, sashwidth=6, sashrelief=tk.RAISED, bd=0, bg="#4a4a4a")
         main_paned.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
 
-        top_frame = ctk.CTkFrame(main_paned, fg_color="transparent")
-        bottom_frame = ctk.CTkFrame(main_paned, fg_color="transparent")
+        top_frame = ctk.CTkFrame(main_paned, fg_color="#2b2b2b")
+        bottom_frame = ctk.CTkFrame(main_paned, fg_color="#2b2b2b")
         main_paned.add(top_frame, minsize=220)
         main_paned.add(bottom_frame, minsize=150)
         main_paned.bind('<Configure>', lambda e: self._update_all_font_sizes() if e.widget is main_paned else None)
