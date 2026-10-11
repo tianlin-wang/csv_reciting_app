@@ -1122,7 +1122,8 @@ class CSVLearningApp:
         ai_wrap, ai_frame, ai_title = ctk_group(bottom_scroll, "🦙 AI 判定结果 (本地智能分析)", padding=10)
         ai_wrap.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=3)
         ai_frame.columnconfigure(0, weight=1)
-        # row0 是文本框，给固定最小高度，保证任何分辨率下都留有可读区域
+        # row0 是文本框，给最小高度保证可读；实际高度由 _sync_ai_minsize
+        # 按窗口大小动态放大，大窗口下能占更多空间
         ai_frame.rowconfigure(0, weight=1, minsize=100)
         self.ai_frame = ai_frame
         self._register_font('ai_title', 'Microsoft YaHei UI', 13, weight='bold')
@@ -1132,9 +1133,10 @@ class CSVLearningApp:
         for _edit_keys in ('<Key>', '<BackSpace>', '<Delete>', '<Control-v>', '<Control-V>', '<Control-x>', '<Control-X>', '<Control-a>', '<Control-A>'):
             self.ai_result_text.bind(_edit_keys, lambda e: "break")
         self._register_font('ai_result_text', 'Consolas', 11)
-        # 兜底高度：AI 判定结果是这个应用的核心输出，任何情况下都不允许被压成 0
-        self.ai_result_text.grid_propagate(False)
-        self.ai_result_text.configure(height=90)
+        # 兜底最小高度：AI 判定结果是核心输出，任何情况下都不允许被压没。
+        # 注意不能设 grid_propagate(False) +固定 height——那会把上限也钉死，
+        # 导致窗口变大时这块永远只有 90px。改为只保留 minsize。
+        self.ai_result_text.grid_propagate(True)
 
         manual_judge_frame = ctk.CTkFrame(ai_frame, fg_color="transparent")
         manual_judge_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=8)
@@ -1161,6 +1163,10 @@ class CSVLearningApp:
         self.btn_export_log.grid(row=0, column=2, padx=8, pady=6)
         self.btn_reset = ctk.CTkButton(action_frame, text="🗑️ 重置", command=self.reset_app, width=100, font=ctk.CTkFont(family='Microsoft YaHei UI', size=13), fg_color="#95a5a6", hover_color="#7f8c8d")
         self.btn_reset.grid(row=0, column=3, padx=8, pady=6)
+        self._register_font('btn_new_round', 'Microsoft YaHei UI', 13)
+        self._register_font('btn_export_wrong', 'Microsoft YaHei UI', 13)
+        self._register_font('btn_export_log', 'Microsoft YaHei UI', 13)
+        self._register_font('btn_reset', 'Microsoft YaHei UI', 13)
 
         # PanedWindow 默认把下半区撑满，题目区会被挤出视野。
         # 布局稳定后按「题目区优先」重新分配 sash 初始位置。
@@ -1173,11 +1179,28 @@ class CSVLearningApp:
         if event.widget is not self.main_paned:
             return
         self._update_all_font_sizes()
+        self._sync_ai_minsize()
+
+    def _sync_ai_minsize(self):
+        """按窗口高度动态调整 AI 结果区的最小高度。
+
+        小窗口保证可读（不低于 100px），大窗口让AI 区占据更多空间，
+        避免固定高度把上限也钉死。
+        """
+        try:
+            h = self.main_paned.winfo_height()
+            if h < 400:
+                return
+            # 约 40% 窗口高度，下限 120，上限 420
+            target = max(120, min(int(h * 0.40), 420))
+            self.ai_frame.rowconfigure(0, minsize=target)
+        except Exception:
+            pass
 
     def _init_sash_position(self):
-        """首次布局后设置 sash：题目区占约 62%，AI 区约 38%。
+        """首次布局后设置 sash：题目区约 52%，AI 区约 48%。
 
-        tk.PanedWindow 没有 sashpos()，要用 sash_place(index, x, y)。
+        tk.PanedWindow 没有 sashpos()，要用 sash_place(index, x, y)，y 是绝对坐标。
         """
         pw = self.main_paned
         try:
@@ -1185,17 +1208,13 @@ class CSVLearningApp:
             if total < 400:
                 self.root.after(120, self._init_sash_position)
                 return
-            # 下半区至少留260，上半区至少留 200
-            pos = max(200, min(int(total * 0.62), total - 260))
-            # sash_place(index, x, y) 的 y 是绝对坐标
+            self._sync_ai_minsize()
+            # 下半区至少留 300（AI 结果 + 判定按钮 + 操作面板），上半区至少 320
+            pos = max(320, min(int(total * 0.52), total - 300))
             pw.sash_place(0, 0, pos)
             self._sash_ready = True
         except Exception:
             pass
-        self._register_font('btn_new_round', 'Microsoft YaHei UI', 13)
-        self._register_font('btn_export_wrong', 'Microsoft YaHei UI', 13)
-        self._register_font('btn_export_log', 'Microsoft YaHei UI', 13)
-        self._register_font('btn_reset', 'Microsoft YaHei UI', 13)
 
     def setup_settings_tab(self, parent):
         parent.columnconfigure(0, weight=1)
