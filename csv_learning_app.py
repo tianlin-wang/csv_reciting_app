@@ -988,13 +988,23 @@ class CSVLearningApp:
         # 下半区至少要放得下「AI结果 + 手动判定 + 操作面板」，原150 不够，
         # 低分辨率下 AI 结果区会被操作面板压住，这里按实际需求抬高下限。
         main_paned.add(bottom_frame, minsize=260)
-        main_paned.bind('<Configure>', lambda e: self._update_all_font_sizes() if e.widget is main_paned else None)
 
         top_frame.columnconfigure(0, weight=1)
+        top_frame.rowconfigure(0, weight=1)
         bottom_frame.columnconfigure(0, weight=1)
         bottom_frame.rowconfigure(0, weight=1)
 
-        file_wrap, file_frame, file_title = ctk_group(top_frame, "📁 文件操作", padding=10)
+        # 上半区同样可滚动：文件操作/进度信息/答案/按钮都是固定高度，
+        # 小窗口下它们会把题目区挤成一条缝（实测q_wrap 只剩 11px）。
+        # 放进滚动容器后，空间不足时用户滚动查看，题目区始终保有最小高度。
+        top_scroll = ctk.CTkScrollableFrame(
+            top_frame, fg_color="transparent",
+            scrollbar_button_color="#3498db", scrollbar_button_hover_color="#2980b9")
+        top_scroll.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        top_scroll.columnconfigure(0, weight=1)
+        self.top_scroll = top_scroll
+
+        file_wrap, file_frame, file_title = ctk_group(top_scroll, "📁 文件操作", padding=10)
         file_wrap.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=3)
         self._register_font('file_title', 'Microsoft YaHei UI', 13, weight='bold')
 
@@ -1012,7 +1022,7 @@ class CSVLearningApp:
         self.file_label.grid(row=0, column=3, padx=15, sticky=tk.W)
         self._register_font('file_label', 'Microsoft YaHei UI', 12)
 
-        info_wrap, info_frame, info_title = ctk_group(top_frame, "📊 进度信息", padding=10)
+        info_wrap, info_frame, info_title = ctk_group(top_scroll, "📊 进度信息", padding=10)
         info_wrap.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=3)
         for c in range(6):
             info_frame.columnconfigure(c, weight=1)
@@ -1046,9 +1056,10 @@ class CSVLearningApp:
         self._update_paren_tooltip()
         self._register_font('paren_switch_main', 'Microsoft YaHei UI', 12)
 
-        self.q_wrap = ctk.CTkFrame(top_frame, fg_color="#1e272e", corner_radius=10)
+        self.q_wrap = ctk.CTkFrame(top_scroll, fg_color="#1e272e", corner_radius=10)
         self.q_wrap.grid(row=2, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=3)
-        top_frame.rowconfigure(2, weight=1)
+        # 题目区是核心内容，给硬性最小高度，任何窗口尺寸下都不会被压成一条缝
+        top_scroll.rowconfigure(2, weight=1, minsize=170)
         self.q_wrap.columnconfigure(0, weight=1)
         self.q_wrap.rowconfigure(1, weight=1)
         self.q_wrap.bind('<Configure>', lambda e: self._update_all_font_sizes() if e.widget is self.q_wrap else None)
@@ -1075,7 +1086,7 @@ class CSVLearningApp:
         q_scroll.columnconfigure(1, weight=3, minsize=120)
         q_scroll.columnconfigure(3, weight=2, minsize=90)
 
-        a_wrap, answer_frame, ans_title = ctk_group(top_frame, "✍️ 你的答案 (第三列)", padding=10)
+        a_wrap, answer_frame, ans_title = ctk_group(top_scroll, "✍️ 你的答案 (第三列)", padding=10)
         a_wrap.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=3)
         answer_frame.columnconfigure(0, weight=1)
         self._register_font('ans_title', 'Microsoft YaHei UI', 13, weight='bold')
@@ -1085,7 +1096,7 @@ class CSVLearningApp:
         self.answer_entry.bind('<Return>', lambda e: self.submit_answer())
         self._register_font('answer_entry', 'Microsoft YaHei UI', 14)
 
-        button_frame = ctk.CTkFrame(top_frame, fg_color="transparent")
+        button_frame = ctk.CTkFrame(top_scroll, fg_color="transparent")
         button_frame.grid(row=4, column=0, pady=8)
 
         self.btn_submit = ctk.CTkButton(button_frame, text="✅ 提交答案", command=self.submit_answer, width=130, height=34, font=ctk.CTkFont(family='Microsoft YaHei UI', size=13, weight='bold'), fg_color="#27ae60", hover_color="#219a52")
@@ -1150,6 +1161,37 @@ class CSVLearningApp:
         self.btn_export_log.grid(row=0, column=2, padx=8, pady=6)
         self.btn_reset = ctk.CTkButton(action_frame, text="🗑️ 重置", command=self.reset_app, width=100, font=ctk.CTkFont(family='Microsoft YaHei UI', size=13), fg_color="#95a5a6", hover_color="#7f8c8d")
         self.btn_reset.grid(row=0, column=3, padx=8, pady=6)
+
+        # PanedWindow 默认把下半区撑满，题目区会被挤出视野。
+        # 布局稳定后按「题目区优先」重新分配 sash 初始位置。
+        self.main_paned = main_paned
+        self._sash_ready = False
+        self.root.after(150, self._init_sash_position)
+        main_paned.bind('<Configure>', self._on_paned_configure)
+
+    def _on_paned_configure(self, event):
+        if event.widget is not self.main_paned:
+            return
+        self._update_all_font_sizes()
+
+    def _init_sash_position(self):
+        """首次布局后设置 sash：题目区占约 62%，AI 区约 38%。
+
+        tk.PanedWindow 没有 sashpos()，要用 sash_place(index, x, y)。
+        """
+        pw = self.main_paned
+        try:
+            total = pw.winfo_height()
+            if total < 400:
+                self.root.after(120, self._init_sash_position)
+                return
+            # 下半区至少留260，上半区至少留 200
+            pos = max(200, min(int(total * 0.62), total - 260))
+            # sash_place(index, x, y) 的 y 是绝对坐标
+            pw.sash_place(0, 0, pos)
+            self._sash_ready = True
+        except Exception:
+            pass
         self._register_font('btn_new_round', 'Microsoft YaHei UI', 13)
         self._register_font('btn_export_wrong', 'Microsoft YaHei UI', 13)
         self._register_font('btn_export_log', 'Microsoft YaHei UI', 13)
