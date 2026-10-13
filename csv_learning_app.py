@@ -768,6 +768,7 @@ class CSVLearningApp:
     def _ensure_ollama_running_async_startup(self):
         if self.ai_assistant._check_ollama_http():
             self.update_ai_status()
+            self._refresh_models_silent()
             return
 
         def worker():
@@ -778,9 +779,32 @@ class CSVLearningApp:
                 time.sleep(1)
                 if self.ai_assistant._check_ollama_http():
                     self.root.after(0, self.update_ai_status)
+                    self.root.after(0, self._refresh_models_silent)
                     return
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def _refresh_models_silent(self):
+        """自动拉取模型列表并同步到下拉框，不改动状态标签文字。
+
+        Ollama 自动启动后模型才真正可枚举，启动流程里必须补这一步，
+        否则「选择模型」下拉框一直空着/显示旧值，只能手动点刷新。
+        """
+        try:
+            if not hasattr(self, 'model_combo'):
+                return
+            models = self.ai_assistant.get_ollama_models()
+            if not models:
+                return
+            models = sorted(models)
+            self.model_combo.configure(values=models)
+            current = self.model_combo.get()
+            if current not in models:
+                preferred = 'qwen2.5:7b' if 'qwen2.5:7b' in models else models[0]
+                self.model_combo.set(preferred)
+            self.ai_assistant.get_available_providers()['ollama']['models'] = models
+        except Exception:
+            pass
 
     def _ensure_ollama_running_async(self, on_done=None, silent=False):
         if self.ai_assistant._check_ollama_http():
@@ -816,6 +840,7 @@ class CSVLearningApp:
         if not silent:
             self.ai_result_text.insert(tk.END, "✅ Ollama 已就绪！\n")
             self.ai_result_text.see(tk.END)
+        self._refresh_models_silent()
         if on_done:
             try:
                 on_done(True)
