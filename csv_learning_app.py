@@ -876,8 +876,12 @@ class CSVLearningApp:
                 pass
 
     def _compute_scale(self):
-        w = max(self.root.winfo_width(), 100)
-        h = max(self.root.winfo_height(), 100)
+        # 注意：必须用逻辑尺寸。_base_w/_base_h 是逻辑基准（1100x900），
+        # 而 winfo_width() 在 150% DPI 下返回物理像素（1650），
+        # 混用会让所有字号被额外放大 1.5 倍。
+        w, h = self._window_logical_size()
+        w = max(w, 100)
+        h = max(h, 100)
         scale = min(w / self._base_w, h / self._base_h)
         return max(0.55, min(scale, 2.2))
 
@@ -1493,9 +1497,24 @@ class CSVLearningApp:
         self._refresh_compact_verdict()
         self.root.after(60, self._update_compact_fonts)
 
+    def _window_logical_size(self):
+        """返回窗口的逻辑宽高（用户感知尺寸）。
+
+        必须用它而不是 winfo_width()：CTk 的 geometry()/minsize() 都按
+        DPI 缩放，150% 缩放下设 720x560 实际拿到 1080x840 物理像素。
+        拿物理像素和 960 的逻辑阈值比较，会永远判定为"窗口够大"，
+        简洁模式就不触发了。
+        """
+        try:
+            s = self.root._get_window_scaling()
+        except Exception:
+            s = 1.0
+        if not s or s <= 0:
+            s = 1.0
+        return (self.root.winfo_width() / s, self.root.winfo_height() / s)
+
     def _maybe_switch_compact(self):
-        w = self.root.winfo_width()
-        h = self.root.winfo_height()
+        w, h = self._window_logical_size()
         if w <= 1 or h <= 1:
             self.root.after(200, self._maybe_switch_compact)
             return
