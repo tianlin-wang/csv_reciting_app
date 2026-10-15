@@ -1348,15 +1348,27 @@ class CSVLearningApp:
             fg_color="#27ae60", hover_color="#219a52")
         self.btn_compact_submit.grid(row=0, column=1)
 
-        # 判定结果由 AI 文本框推导：任何写入都会触发 <<Modified>>
-        try:
-            self.ai_result_text._textbox.bind(
-                "<<Modified>>", self._on_ai_text_modified, add="+")
-        except Exception:
-            pass
         self._compact_verdict = None
 
     def _compact_submit(self):
+        """简洁模式的提交/前进。
+
+        分两种意图：
+        - 本题还没判定 → 提交答案，走正常判定流程
+        - 本题已经判定 → 视为「看完了，下一题」
+        """
+        info = getattr(self, "last_judgment_info", None)
+        already_judged = bool(info) and info.get("index") == self.current_index
+
+        if already_judged:
+            self.next_question()
+            try:
+                self.compact_entry.delete(0, tk.END)
+                self.compact_entry.focus_set()
+            except Exception:
+                pass
+            return
+
         text = self.compact_entry.get()
         try:
             self.answer_entry.delete(0, tk.END)
@@ -1369,49 +1381,33 @@ class CSVLearningApp:
         except Exception:
             pass
 
-    def _on_ai_text_modified(self, event):
-        """AI 文本框内容变化 → 推导简洁模式的判定结果。"""
-        tb = getattr(self, "ai_result_text", None)
-        if tb is None or event.widget is not getattr(tb, "_textbox", None):
-            return
-        try:
-            if not event.widget.edit_modified():
-                return
-            event.widget.edit_modified(False)
-        except Exception:
-            pass
-        self._refresh_compact_verdict()
-
     def _refresh_compact_verdict(self):
-        """从 AI 结果文本尾部解析「正确/错误」和正确答案。"""
+        """刷新简洁模式的判定结果与正确答案。
+
+        铁律：**只有本题已经判定过，才允许显示正确答案**。
+        否则用户一进题目就看到答案，等于直接抄，默写就失去意义了。
+
+        判定来源用 last_judgment_info 而不是解析 AI 文本框：
+        - 它带 index，能判断这条判定是否属于当前题，
+          换题后自动失效，不会把上一题的答案带到下一题；
+        - 文本解析不可靠，tail 里残留的历史判定会被反复读到。
+        """
         if getattr(self, "compact_frame", None) is None:
             return
-        tail = ""
-        try:
-            tail = self.ai_result_text.get("1.0", tk.END)[-3000:]
-        except Exception:
-            tail = ""
+
+        info = getattr(self, "last_judgment_info", None)
+        judged = bool(info) and info.get("index") == self.current_index
 
         state = None
         answer = None
-        if "错误，正确答案：" in tail:
-            state = "wrong"
-            answer = tail.rsplit("错误，正确答案：", 1)[1].splitlines()[0].strip()
-        elif "正确\n" in tail or tail.rstrip().endswith("正确"):
-            state = "correct"
-        elif "💡 正确答案:" in tail:
-            state = "shown"
-            answer = tail.rsplit("💡 正确答案:", 1)[1].splitlines()[0].strip()
-
-        # 没解析到时退回本题自身的正确答案
-        if answer is None:
-            answer = self._current_correct_answer()
+        if judged:
+            state = "correct" if info.get("is_correct") else "wrong"
+            answer = info.get("correct_answer") or ""
 
         self._compact_verdict = state
         palette = {
             "correct": ("#1e3d2c", "#4ade80", "✅  判定正确"),
             "wrong": ("#43222a", "#f87171", "❌  判定错误"),
-            "shown": ("#33302a", "#fbbf24", "💡  参考答案"),
         }
         if state in palette:
             bg, fg, text = palette[state]
@@ -1423,23 +1419,16 @@ class CSVLearningApp:
                 text="✍️  等待作答" if self.current_csv_data else "📂  请先选择 CSV 文件",
                 text_color="#9aa4b2")
 
+        # 未判定 → 隐藏答案，只留占位符
         try:
-            self.compact_answer_label.configure(text=answer or "-")
+            if answer:
+                self.compact_answer_label.configure(
+                    text=clean_answer_string(answer, self.ai_assistant))
+            else:
+                self.compact_answer_label.configure(text="· · ·")
         except Exception:
             pass
         self._update_compact_fonts()
-
-    def _current_correct_answer(self):
-        if not self.current_csv_data:
-            return ""
-        if self.current_index >= len(self.current_csv_data):
-            return ""
-        row = self.current_csv_data[self.current_index]
-        raw = row[2] if len(row) > 2 else ""
-        try:
-            return clean_answer_string(raw, self.ai_assistant)
-        except Exception:
-            return raw
 
     def _update_compact_fonts(self):
         """简洁模式下的单词/词性自适应：只按宽度收敛，字号上限更宽松。"""
@@ -2223,7 +2212,16 @@ class CSVLearningApp:
             }
 
             self.update_progress()
-            self.next_question()
+            # 简洁模式下不自动跳下一题：判定结果和答案需要停留给用户看，
+            # 否则刚刷新出来就被下一题覆盖。用户再次回车/点提交时手动前进。
+            if getattr(self, "_compact_mode", False):
+                self._refresh_compact_verdict()
+                try:
+                    self.compact_entry.focus_set()
+                except Exception:
+                    pass
+            else:
+                self.next_question()
 
         finally:
             self.processing = False
