@@ -1011,6 +1011,7 @@ class CSVLearningApp:
         self.setup_settings_tab(settings_tab)
         self._sync_paren_ui_from_config()
         self.update_ai_status()
+        self._compact_override = None
 
     def setup_learning_tab(self, parent):
         parent.columnconfigure(0, weight=1)
@@ -1061,7 +1062,7 @@ class CSVLearningApp:
 
         info_wrap, info_frame, info_title = ctk_group(top_scroll, "📊 进度信息", padding=10)
         info_wrap.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=3)
-        for c in range(6):
+        for c in range(7):
             info_frame.columnconfigure(c, weight=1)
         self._register_font('info_title', 'Microsoft YaHei UI', 13, weight='bold')
 
@@ -1092,6 +1093,21 @@ class CSVLearningApp:
         self.paren_switch_main.grid(row=0, column=4, columnspan=2, padx=8, pady=6, sticky="w")
         self._update_paren_tooltip()
         self._register_font('paren_switch_main', 'Microsoft YaHei UI', 12)
+
+        # 主页简洁模式开关：手动覆盖自动判定
+        self.compact_switch_var_main = ctk.BooleanVar(value=False)
+        self.compact_switch_main = ctk.CTkSwitch(
+            info_frame,
+            text="🎯 简洁模式",
+            variable=self.compact_switch_var_main,
+            command=self._on_toggle_compact_main,
+            font=ctk.CTkFont(family='Microsoft YaHei UI', size=12),
+            button_color="#3498db",
+            button_hover_color="#2980b9",
+            progress_color="#2980b9"
+        )
+        self.compact_switch_main.grid(row=0, column=6, padx=8, pady=6, sticky="w")
+        self._register_font('compact_switch_main', 'Microsoft YaHei UI', 12)
 
         self.q_wrap = ctk.CTkFrame(top_scroll, fg_color="#1e272e", corner_radius=10)
         self.q_wrap.grid(row=2, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=3)
@@ -1261,7 +1277,7 @@ class CSVLearningApp:
 
         self.btn_compact_exit = ctk.CTkButton(
             bar, text="⤢", width=38, height=30,
-            command=lambda: self._apply_compact_mode(False, force=True),
+            command=lambda: self._on_toggle_compact_main_exit(),
             fg_color="#2f3540", hover_color="#3b424f")
         self.btn_compact_exit.grid(row=0, column=2, padx=(0, 2))
 
@@ -1349,6 +1365,15 @@ class CSVLearningApp:
         self.btn_compact_submit.grid(row=0, column=1)
 
         self._compact_verdict = None
+
+    def _on_toggle_compact_main_exit(self):
+        """简洁模式右上角 ⤢：退出简洁并回到自动判定。"""
+        self._compact_override = None
+        try:
+            self.compact_switch_var_main.set(False)
+        except Exception:
+            pass
+        self._apply_compact_mode(False)
 
     def _compact_submit(self):
         """简洁模式的提交/前进。
@@ -1507,12 +1532,31 @@ class CSVLearningApp:
         if w <= 1 or h <= 1:
             self.root.after(200, self._maybe_switch_compact)
             return
-        self._apply_compact_mode(self._should_use_compact(w, h))
+        should = self._should_use_compact(w, h)
+        # override 只有两种状态：
+        #   True → 强制简洁（用户手动开的，大窗口也保持）
+        #   None → 交给窗口尺寸自动判定
+        # 关闭开关等价于回到自动，不会把大窗口"锁死"在完整模式，
+        # 否则小窗口下也触发不了简洁了。
+        if self._compact_override is True:
+            self._apply_compact_mode(True)
+            return
+        self._apply_compact_mode(should)
 
     @classmethod
     def _should_use_compact(cls, w, h):
         """分辨率/窗口尺寸过小 → 用简洁模式。"""
         return w < cls.COMPACT_MAX_W or h < cls.COMPACT_MAX_H
+
+    def _on_toggle_compact_main(self):
+        """主页简洁模式开关。"""
+        if self.compact_switch_var_main.get():
+            self._compact_override = True
+            self._apply_compact_mode(True)
+        else:
+            # 关开关 = 回自动判定，不是锁死完整模式
+            self._compact_override = None
+            self._maybe_switch_compact()
 
     def _apply_compact_mode(self, active, force=False):
         if getattr(self, "compact_frame", None) is None:
@@ -1532,6 +1576,11 @@ class CSVLearningApp:
             self.root.minsize(720, 560)
             self._sash_ready = False
             self.root.after(80, self._init_sash_position)
+        # 同步主页开关状态，避免和实际模式不一致
+        try:
+            self.compact_switch_var_main.set(active)
+        except Exception:
+            pass
         self.root.after(60, self._update_all_font_sizes)
 
     def _on_paned_configure(self, event):
