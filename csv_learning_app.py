@@ -1358,7 +1358,7 @@ class CSVLearningApp:
         self.compact_entry.bind('<Return>', lambda e: self._compact_submit())
 
         self.btn_compact_submit = ctk.CTkButton(
-            entry_card, text="提交", width=92, height=44,
+            entry_card, text="提交", width=120, height=44,
             command=self._compact_submit,
             font=ctk.CTkFont(family="Microsoft YaHei UI", size=16, weight="bold"),
             fg_color="#27ae60", hover_color="#219a52")
@@ -1453,7 +1453,35 @@ class CSVLearningApp:
                 self.compact_answer_label.configure(text="· · ·")
         except Exception:
             pass
+        self._sync_compact_submit_button(state)
         self._update_compact_fonts()
+
+    def _sync_compact_submit_button(self, state):
+        """判定完成后，提交键变成「下一题」。
+
+        按钮语义跟随 _compact_submit 的实际行为：
+        未判定 → 提交答案；已判定 → 前进到下一题。
+        """
+        btn = getattr(self, "btn_compact_submit", None)
+        if btn is None:
+            return
+        try:
+            if state in ("correct", "wrong"):
+                btn.configure(text="➡️ 下一题", fg_color="#2980b9", hover_color="#2471a3")
+            else:
+                btn.configure(text="提交", fg_color="#27ae60", hover_color="#219a52")
+        except Exception:
+            pass
+        # 输入框提示同步，让用户知道现在回车会干什么
+        entry = getattr(self, "compact_entry", None)
+        if entry is not None:
+            try:
+                if state in ("correct", "wrong"):
+                    entry.configure(placeholder_text="看完了，回车进入下一题")
+                else:
+                    entry.configure(placeholder_text="在这里默写单词…  （回车提交）")
+            except Exception:
+                pass
 
     def _update_compact_fonts(self):
         """简洁模式下的单词/词性自适应：只按宽度收敛，字号上限更宽松。"""
