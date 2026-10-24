@@ -905,6 +905,14 @@ class CSVLearningApp:
         所以这里做几轮迭代：用当前字号渲染后读回真实列宽，再按需收缩，
         直到文本不再溢出或字号触底。
         """
+        try:
+            self._do_update_question_fonts()
+        except Exception:
+            # <Configure> / after 回调可能在窗口销毁后仍触发，
+            # 此时 tk 命令报 TclError，静默忽略。
+            pass
+
+    def _do_update_question_fonts(self):
         q_wrap = getattr(self, "q_wrap", None)
         q_scroll = getattr(self, "q_scroll", None)
         if q_wrap is None or q_scroll is None:
@@ -1146,7 +1154,10 @@ class CSVLearningApp:
 
         self.answer_entry = ctk.CTkEntry(answer_frame, font=ctk.CTkFont(family='Microsoft YaHei UI', size=14), height=36, placeholder_text="请输入你的答案...")
         self.answer_entry.grid(row=0, column=0, padx=5, pady=5, sticky=(tk.W, tk.E))
-        self.answer_entry.bind('<Return>', lambda e: self.submit_answer())
+        # 不能无条件调 submit_answer()：简洁模式下这个控件不可见但可能
+        # 仍持有焦点，回车会直接走到这里，answer_entry 是空的，
+        # 于是弹「请输入答案」。按模式分发到对应入口。
+        self.answer_entry.bind('<Return>', self._on_answer_entry_return)
         self._register_font('answer_entry', 'Microsoft YaHei UI', 14)
 
         button_frame = ctk.CTkFrame(top_scroll, fg_color="transparent")
@@ -1366,6 +1377,13 @@ class CSVLearningApp:
 
         self._compact_verdict = None
 
+    def _on_answer_entry_return(self, event=None):
+        """完整模式答案框的回车。简洁模式下转发给简洁入口。"""
+        if getattr(self, "_compact_mode", False):
+            self._compact_submit()
+            return "break"
+        self.submit_answer()
+
     def _on_toggle_compact_main_exit(self):
         """简洁模式右上角 ⤢：退出简洁并回到自动判定。"""
         self._compact_override = None
@@ -1487,6 +1505,14 @@ class CSVLearningApp:
         """简洁模式下的单词/词性自适应：只按宽度收敛，字号上限更宽松。"""
         if not getattr(self, "_compact_mode", False):
             return
+        try:
+            self._do_update_compact_fonts()
+        except Exception:
+            # after 回调可能在窗口已销毁后仍触发，此时 tk 命令会报
+            # TclError，静默忽略即可。
+            pass
+
+    def _do_update_compact_fonts(self):
         word = self.compact_word_label.cget("text") or ""
         pos = self.compact_pos_label.cget("text") or ""
         card = self.compact_word_label.master.master
@@ -1597,6 +1623,9 @@ class CSVLearningApp:
             self.compact_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
             self.root.minsize(420, 460)
             self._sync_compact_widgets()
+            # 焦点可能还留在已被隐藏的 answer_entry 上，回车会走进
+            # 那个空控件导致「请输入答案」。主动搬到简洁输入框。
+            self.root.after(60, self._focus_compact_entry)
             self.root.after(120, self._update_compact_fonts)
         else:
             self.compact_frame.grid_remove()
@@ -1610,6 +1639,14 @@ class CSVLearningApp:
         except Exception:
             pass
         self.root.after(60, self._update_all_font_sizes)
+
+    def _focus_compact_entry(self):
+        """把焦点放到简洁模式的输入框。"""
+        try:
+            if getattr(self, "_compact_mode", False) and self.compact_frame.winfo_viewable():
+                self.compact_entry.focus_set()
+        except Exception:
+            pass
 
     def _on_paned_configure(self, event):
         if event.widget is not self.main_paned:
@@ -2083,7 +2120,12 @@ class CSVLearningApp:
             self.col1_value.configure(text=row[0] if len(row) > 0 else "-")
             self.col2_value.configure(text=row[1] if len(row) > 1 else "-")
             self.answer_entry.delete(0, tk.END)
-            self.answer_entry.focus_set()
+            # 简洁模式下不能聚焦 answer_entry：它被隐藏了，焦点留在那儿
+            # 会让回车走进空控件，弹「请输入答案」。
+            if getattr(self, "_compact_mode", False):
+                self._focus_compact_entry()
+            else:
+                self.answer_entry.focus_set()
             self.update_progress()
             self._refit_question_fonts()
         else:
