@@ -675,14 +675,20 @@ class _FlatTabView(ctk.CTkFrame):
     def tab(self, name):
         return self._tab_dict[name]
 
+    def select(self, name):
+        """切换到指定标签页（供顶栏「AI」胶囊调用）。"""
+        if name in self._tab_dict:
+            self._bar.set(name)
+            self._on_select(name)
+
 
 class CSVLearningApp:
     def __init__(self, root):
         self.root = root
         self.root.title("📚 词汇学习默写工具 - 🦙 Ollama AI版")
-        self.geometry("1100x900")
-        # 下限：低于这个尺寸，题目区与 AI 结果区无法同时保证可读
-        self.root.minsize(720, 560)
+        self.geometry("900x760")
+        # 下限：单列布局，窄到 560 也能正常默写
+        self.root.minsize(560, 520)
 
         self.current_csv_data = []
         self.current_index = 0
@@ -692,10 +698,10 @@ class CSVLearningApp:
         self.correct_count = 0
         self.wrong_count = 0
         self.csv_file_path = None
+        self.csv_file_paths = []
         self.ai_assistant = OllamaAILearningAssistant()
         self.processing = False
-        self.paren_switch_main = None
-        self.clean_paren_var_main = None
+        self.clean_paren_var = None
 
         self._font_specs = {}
         self._base_w = 1100
@@ -706,45 +712,36 @@ class CSVLearningApp:
         self._last_resize_size = (0, 0)
         self._resize_timer = None
         self.root.bind('<Configure>', self._on_window_resize)
+        self.root.bind('<Escape>', self._on_global_escape, add='+')
+        self.root.bind('<Button-1>', self._on_global_click, add='+')
         self.root.after(100, self._update_all_font_sizes)
         self.root.after(800, self._ensure_ollama_running_async_startup)
 
     def _on_toggle_clean_paren(self):
-        enabled = self.clean_paren_var_main.get()
+        enabled = self.clean_paren_var.get()
         self.ai_assistant.set_clean_parentheses(enabled)
-        if hasattr(self, 'clean_paren_var') and self.clean_paren_var is not None:
-            self.clean_paren_var.set(enabled)
         status = "已开启" if enabled else "已关闭"
         self.ai_result_text.insert(tk.END, f"🧹 括号清理功能 {status}\n")
         self.ai_result_text.see(tk.END)
-        self._sync_paren_style_from_state(enabled)
-        self._update_paren_tooltip()
 
     def _sync_paren_style_from_state(self, enabled):
-        if not self.paren_switch_main:
+        """括号开关只在设置页有一份，这里同步它的配色。"""
+        switch = getattr(self, 'paren_check', None)
+        if not switch:
             return
         try:
             color = "#2ecc71" if enabled else "#95a5a6"
-            self.paren_switch_main.configure(button_color=color, button_hover_color=color)
+            switch.configure(button_color=color, button_hover_color=color)
         except Exception:
             pass
 
     def _update_paren_tooltip(self):
-        if not self.paren_switch_main:
-            return
-        enabled = self.clean_paren_var_main.get() if self.clean_paren_var_main else True
-        if enabled:
-            tip = "🧹 已开启：苹果（复数） → 苹果"
-        else:
-            tip = "📝 已关闭：括号原样参与判定"
-        self.paren_switch_main.configure(text=tip)
+        enabled = self.clean_paren_var.get() if self.clean_paren_var else True
         self._sync_paren_style_from_state(enabled)
 
     def _sync_paren_ui_from_config(self):
         val = self.ai_assistant.clean_parentheses
-        if self.clean_paren_var_main is not None:
-            self.clean_paren_var_main.set(val)
-        if hasattr(self, 'clean_paren_var') and self.clean_paren_var is not None:
+        if self.clean_paren_var is not None:
             self.clean_paren_var.set(val)
         self._update_paren_tooltip()
         self._sync_paren_style_from_state(val)
@@ -765,10 +762,6 @@ class CSVLearningApp:
     def _on_resize_settled(self):
         self._resize_timer = None
         self._update_all_font_sizes()
-        # 分辨率变小→ 简洁模式；变大 → 恢复完整界面
-        self._maybe_switch_compact()
-        if getattr(self, "_compact_mode", False):
-            self._sync_compact_widgets()
 
     def _register_font(self, attr_name, family, base_size, **kwargs):
         self._font_specs[attr_name] = (family, base_size, kwargs)
@@ -875,6 +868,21 @@ class CSVLearningApp:
             except Exception:
                 pass
 
+    def _window_logical_size(self):
+        """返回窗口的逻辑宽高（用户感知尺寸）。
+
+        必须用它而不是 winfo_width()：CTk 的 geometry()/minsize() 都按
+        DPI 缩放，150% 缩放下设 720x560 实际拿到 1080x840 物理像素，
+        拿物理像素算缩放会把所有字号额外放大 1.5 倍。
+        """
+        try:
+            s = self.root._get_window_scaling()
+        except Exception:
+            s = 1.0
+        if not s or s <= 0:
+            s = 1.0
+        return (self.root.winfo_width() / s, self.root.winfo_height() / s)
+
     def _compute_scale(self):
         # 注意：必须用逻辑尺寸。_base_w/_base_h 是逻辑基准（1100x900），
         # 而 winfo_width() 在 150% DPI 下返回物理像素（1650），
@@ -898,92 +906,10 @@ class CSVLearningApp:
             _MEASURE_CACHE[key] = font
         return font.measure(text)
 
-    def _update_question_fonts(self):
-        """单词/词性字号自适应：依据文本实测宽度 + 容器可用宽高。
-
-        列宽由 grid 的 weight 分配而来，和字号互为因果（字号大→列宽大），
-        所以这里做几轮迭代：用当前字号渲染后读回真实列宽，再按需收缩，
-        直到文本不再溢出或字号触底。
-        """
-        try:
-            self._do_update_question_fonts()
-        except Exception:
-            # <Configure> / after 回调可能在窗口销毁后仍触发，
-            # 此时 tk 命令报 TclError，静默忽略。
-            pass
-
-    def _do_update_question_fonts(self):
-        q_wrap = getattr(self, "q_wrap", None)
-        q_scroll = getattr(self, "q_scroll", None)
-        if q_wrap is None or q_scroll is None:
-            return
-
-        wrap_w = q_wrap.winfo_width()
-        wrap_h = q_wrap.winfo_height()
-        if wrap_w < 50 or q_scroll.winfo_width() < 50:
-            return
-
-        # 单行可用高度（扣掉标题行与内边距）
-        inner_h = max(wrap_h - 34, 20)
-
-        label_size = max(13, min(16, int(self._compute_scale() * 14)))
-
-        t1 = self.col1_value.cget("text") or ""
-        t2 = self.col2_value.cget("text") or ""
-
-        cache_key = (t1, t2, wrap_w, inner_h, label_size)
-        if self._question_size_cache.get("key") == cache_key:
-            return
-        self._question_size_cache["key"] = cache_key
-
-        # 标签固定小号，不随内容放大
-        label_font = ctk.CTkFont(family="Microsoft YaHei UI", size=label_size, weight="bold")
-        self.col1_label.configure(font=label_font)
-        self.col2_label.configure(font=label_font)
-
-        def apply(word_size, pos_size):
-            self.col1_value.configure(
-                font=ctk.CTkFont(family="Microsoft YaHei UI", size=word_size, weight="bold"))
-            self.col2_value.configure(
-                font=ctk.CTkFont(family="Microsoft YaHei UI", size=pos_size, slant="italic"))
-
-        # 高度上限
-        word_max = 54
-        pos_max = 34
-        if inner_h > 0:
-            cap = int(inner_h * 0.85 / 1.35)
-            word_max = max(12, min(word_max, cap))
-            pos_max = max(11, min(pos_max, cap))
-
-        word_size, pos_size = word_max, min(pos_max, max(12, int(word_max * 0.62)))
-        apply(word_size, pos_size)
-
-        # 迭代收敛：读回真实列宽，超出则收缩
-        for _ in range(6):
-            self.root.update_idletasks()
-            avail1 = self.col1_value.winfo_width()
-            avail2 = self.col2_value.winfo_width()
-            if avail1 < 20 or avail2 < 20:
-                break
-            need1 = self._text_px(t1, word_size, True)
-            need2 = self._text_px(t2, pos_size, False)
-            # 4% 余量，规避测量与实际排版的细微差异
-            over1 = need1 > avail1 * 0.96
-            over2 = need2 > avail2 * 0.96
-            if not over1 and not over2:
-                break
-            if over1:
-                word_size = max(12, int(word_size * (avail1 * 0.96 / need1)) - 1)
-            if over2:
-                pos_size = max(11, int(pos_size * min(1.0, avail2 * 0.96 / need2)) - 1)
-            # 词性不超过单词的 62%
-            pos_size = min(pos_size, max(12, int(word_size * 0.62)))
-            apply(word_size, pos_size)
-
     def _update_all_font_sizes(self):
         win_scale = self._compute_scale()
         ui_scale = max(0.7, min(win_scale, 2.0))
-        question_attrs = ('col1_label', 'col1_value', 'col2_label', 'col2_value')
+        question_attrs = ('col1_value', 'col2_value')
         for attr_name, (family, base_size, kwargs) in self._font_specs.items():
             if attr_name in question_attrs:
                 continue
@@ -996,6 +922,12 @@ class CSVLearningApp:
                 else:
                     new_size = max(10, int(round(base_size * win_scale)))
                 widget.configure(font=ctk.CTkFont(family=family, size=new_size, **kwargs))
+                # 胶囊按钮的宽高跟着字号缩放，否则小字配大按钮很怪
+                base = getattr(widget, "_pill_base", None)
+                if base:
+                    w_ratio = new_size / 12.0
+                    widget.configure(width=max(28, int(base[0] * w_ratio)),
+                                     height=max(20, int(base[1] * w_ratio)))
             except Exception:
                 pass
         self._update_question_fonts()
@@ -1011,6 +943,7 @@ class CSVLearningApp:
 
         notebook = _FlatTabView(main_frame)
         notebook.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
+        self.notebook = notebook
 
         learning_tab = notebook.add("📚 学习模式")
         settings_tab = notebook.add("🤖 AI设置 (Ollama)")
@@ -1019,425 +952,414 @@ class CSVLearningApp:
         self.setup_settings_tab(settings_tab)
         self._sync_paren_ui_from_config()
         self.update_ai_status()
-        self._compact_override = None
 
     def setup_learning_tab(self, parent):
+        """构建唯一的学习界面（不再区分完整模式 / 简洁模式）。
+
+        自上而下：工具条 → 状态行 → 判定卡 → 单词卡 → 正确答案卡
+        → 输入行 → AI 判定详情（可折叠）。
+        低频操作（进度存取 / 新一轮 / 导出 / 重置）收进「⋯ 更多」浮层。
+        """
         parent.columnconfigure(0, weight=1)
         parent.rowconfigure(0, weight=1)
 
-        main_paned = tk.PanedWindow(parent, orient=tk.VERTICAL, sashwidth=6, sashrelief=tk.RAISED, bd=0, bg="#4a4a4a")
-        main_paned.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
-
-        top_frame = ctk.CTkFrame(main_paned, fg_color="#2b2b2b")
-        bottom_frame = ctk.CTkFrame(main_paned, fg_color="#2b2b2b")
-        main_paned.add(top_frame, minsize=200)
-        # 下半区至少要放得下「AI结果 + 手动判定 + 操作面板」，原150 不够，
-        # 低分辨率下 AI 结果区会被操作面板压住，这里按实际需求抬高下限。
-        main_paned.add(bottom_frame, minsize=260)
-
-        top_frame.columnconfigure(0, weight=1)
-        top_frame.rowconfigure(0, weight=1)
-        bottom_frame.columnconfigure(0, weight=1)
-        bottom_frame.rowconfigure(0, weight=1)
-
-        # 上半区同样可滚动：文件操作/进度信息/答案/按钮都是固定高度，
-        # 小窗口下它们会把题目区挤成一条缝（实测q_wrap 只剩 11px）。
-        # 放进滚动容器后，空间不足时用户滚动查看，题目区始终保有最小高度。
-        top_scroll = ctk.CTkScrollableFrame(
-            top_frame, fg_color="transparent",
-            scrollbar_button_color="#3498db", scrollbar_button_hover_color="#2980b9")
-        top_scroll.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        top_scroll.columnconfigure(0, weight=1)
-        self.top_scroll = top_scroll
-
-        file_wrap, file_frame, file_title = ctk_group(top_scroll, "📁 文件操作", padding=10)
-        file_wrap.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=3)
-        self._register_font('file_title', 'Microsoft YaHei UI', 13, weight='bold')
-
-        self.btn_load = ctk.CTkButton(file_frame, text="选择 CSV 文件", command=self.load_csv, width=140, font=ctk.CTkFont(family='Microsoft YaHei UI', size=12))
-        self.btn_load.grid(row=0, column=0, padx=6, pady=5)
-        self.btn_save = ctk.CTkButton(file_frame, text="💾 保存进度", command=self.save_progress, width=120, fg_color="#27ae60", hover_color="#219a52", font=ctk.CTkFont(family='Microsoft YaHei UI', size=12))
-        self.btn_save.grid(row=0, column=1, padx=6, pady=5)
-        self.btn_read = ctk.CTkButton(file_frame, text="📂 读取进度", command=self.load_progress, width=120, fg_color="#2980b9", hover_color="#2471a3", font=ctk.CTkFont(family='Microsoft YaHei UI', size=12))
-        self.btn_read.grid(row=0, column=2, padx=6, pady=5)
-        self._register_font('btn_load', 'Microsoft YaHei UI', 12)
-        self._register_font('btn_save', 'Microsoft YaHei UI', 12)
-        self._register_font('btn_read', 'Microsoft YaHei UI', 12)
-
-        self.file_label = ctk.CTkLabel(file_frame, text="未选择文件", font=ctk.CTkFont(family='Microsoft YaHei UI', size=12), text_color="#a0a0a0")
-        self.file_label.grid(row=0, column=3, padx=15, sticky=tk.W)
-        self._register_font('file_label', 'Microsoft YaHei UI', 12)
-
-        info_wrap, info_frame, info_title = ctk_group(top_scroll, "📊 进度信息", padding=10)
-        info_wrap.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=3)
-        for c in range(7):
-            info_frame.columnconfigure(c, weight=1)
-        self._register_font('info_title', 'Microsoft YaHei UI', 13, weight='bold')
-
-        self.round_label = ctk.CTkLabel(info_frame, text="轮次: 1", font=ctk.CTkFont(family='Microsoft YaHei UI', size=13, weight='bold'))
-        self.round_label.grid(row=0, column=0, padx=8, pady=6)
-        self.progress_label = ctk.CTkLabel(info_frame, text="进度: 0/0", font=ctk.CTkFont(family='Microsoft YaHei UI', size=13))
-        self.progress_label.grid(row=0, column=1, padx=8, pady=6)
-        self.stats_label = ctk.CTkLabel(info_frame, text="正确: 0 | 错误: 0", font=ctk.CTkFont(family='Microsoft YaHei UI', size=13))
-        self.stats_label.grid(row=0, column=2, padx=8, pady=6)
-        self.ai_status_label = ctk.CTkLabel(info_frame, text="🦙 AI: Ollama", font=ctk.CTkFont(family='Microsoft YaHei UI', size=13), text_color="#2ecc71")
-        self.ai_status_label.grid(row=0, column=3, padx=8, pady=6)
-        self._register_font('round_label', 'Microsoft YaHei UI', 13, weight='bold')
-        self._register_font('progress_label', 'Microsoft YaHei UI', 13)
-        self._register_font('stats_label', 'Microsoft YaHei UI', 13)
-        self._register_font('ai_status_label', 'Microsoft YaHei UI', 13)
-
-        self.clean_paren_var_main = ctk.BooleanVar(value=self.ai_assistant.clean_parentheses)
-        self.paren_switch_main = ctk.CTkSwitch(
-            info_frame,
-            text="🧹 忽略括号备注",
-            variable=self.clean_paren_var_main,
-            command=self._on_toggle_clean_paren,
-            font=ctk.CTkFont(family='Microsoft YaHei UI', size=12),
-            button_color="#2ecc71",
-            button_hover_color="#27ae60",
-            progress_color="#27ae60"
-        )
-        self.paren_switch_main.grid(row=0, column=4, columnspan=2, padx=8, pady=6, sticky="w")
-        self._update_paren_tooltip()
-        self._register_font('paren_switch_main', 'Microsoft YaHei UI', 12)
-
-        # 主页简洁模式开关：手动覆盖自动判定
-        self.compact_switch_var_main = ctk.BooleanVar(value=False)
-        self.compact_switch_main = ctk.CTkSwitch(
-            info_frame,
-            text="🎯 简洁模式",
-            variable=self.compact_switch_var_main,
-            command=self._on_toggle_compact_main,
-            font=ctk.CTkFont(family='Microsoft YaHei UI', size=12),
-            button_color="#3498db",
-            button_hover_color="#2980b9",
-            progress_color="#2980b9"
-        )
-        self.compact_switch_main.grid(row=0, column=6, padx=8, pady=6, sticky="w")
-        self._register_font('compact_switch_main', 'Microsoft YaHei UI', 12)
-
-        self.q_wrap = ctk.CTkFrame(top_scroll, fg_color="#1e272e", corner_radius=10)
-        self.q_wrap.grid(row=2, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=3)
-        # 题目区是核心内容，给硬性最小高度，任何窗口尺寸下都不会被压成一条缝
-        top_scroll.rowconfigure(2, weight=1, minsize=170)
-        self.q_wrap.columnconfigure(0, weight=1)
-        self.q_wrap.rowconfigure(1, weight=1)
-        self.q_wrap.bind('<Configure>', lambda e: self._update_all_font_sizes() if e.widget is self.q_wrap else None)
-
-        self.q_title = ctk.CTkLabel(self.q_wrap, text="❓ 当前题目", font=ctk.CTkFont(family='Microsoft YaHei UI', size=13, weight='bold'), text_color="#ecf0f1")
-        self.q_title.grid(row=0, column=0, sticky=tk.W, padx=12, pady=(6, 2))
-        self._register_font('q_title', 'Microsoft YaHei UI', 13, weight='bold')
-
-        q_scroll = ctk.CTkScrollableFrame(self.q_wrap, fg_color="transparent", scrollbar_button_color="#3498db", scrollbar_button_hover_color="#2980b9")
-        q_scroll.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=12, pady=(2, 6))
-        self.q_scroll = q_scroll
-
-        self.col1_label = ctk.CTkLabel(q_scroll, text="📝 单词:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=14, weight='bold'), text_color="#3498db")
-        self.col1_label.grid(row=0, column=0, sticky=tk.W, pady=5)
-        self.col1_value = ctk.CTkLabel(q_scroll, text="-", font=ctk.CTkFont(family='Microsoft YaHei UI', size=32, weight='bold'), text_color="#5dade2", anchor="w", justify="left")
-        self.col1_value.grid(row=0, column=1, sticky=(tk.W, tk.E), pady=5, padx=12)
-
-        self.col2_label = ctk.CTkLabel(q_scroll, text="🏷️ 词性:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=14, weight='bold'), text_color="#e74c3c")
-        self.col2_label.grid(row=0, column=2, sticky=tk.W, pady=5, padx=(20, 0))
-        self.col2_value = ctk.CTkLabel(q_scroll, text="-", font=ctk.CTkFont(family='Microsoft YaHei UI', size=26, slant='italic'), text_color="#ec7063", anchor="w", justify="left")
-        self.col2_value.grid(row=0, column=3, sticky=(tk.W, tk.E), pady=5, padx=12)
-
-        # 单词区与词性区按 3:2 分配剩余宽度，避免单词过长把词性挤出可视区
-        q_scroll.columnconfigure(1, weight=3, minsize=120)
-        q_scroll.columnconfigure(3, weight=2, minsize=90)
-
-        a_wrap, answer_frame, ans_title = ctk_group(top_scroll, "✍️ 你的答案 (第三列)", padding=10)
-        a_wrap.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=3)
-        answer_frame.columnconfigure(0, weight=1)
-        self._register_font('ans_title', 'Microsoft YaHei UI', 13, weight='bold')
-
-        self.answer_entry = ctk.CTkEntry(answer_frame, font=ctk.CTkFont(family='Microsoft YaHei UI', size=14), height=36, placeholder_text="请输入你的答案...")
-        self.answer_entry.grid(row=0, column=0, padx=5, pady=5, sticky=(tk.W, tk.E))
-        # 不能无条件调 submit_answer()：简洁模式下这个控件不可见但可能
-        # 仍持有焦点，回车会直接走到这里，answer_entry 是空的，
-        # 于是弹「请输入答案」。按模式分发到对应入口。
-        self.answer_entry.bind('<Return>', self._on_answer_entry_return)
-        self._register_font('answer_entry', 'Microsoft YaHei UI', 14)
-
-        button_frame = ctk.CTkFrame(top_scroll, fg_color="transparent")
-        button_frame.grid(row=4, column=0, pady=8)
-
-        self.btn_submit = ctk.CTkButton(button_frame, text="✅ 提交答案", command=self.submit_answer, width=130, height=34, font=ctk.CTkFont(family='Microsoft YaHei UI', size=13, weight='bold'), fg_color="#27ae60", hover_color="#219a52")
-        self.btn_submit.grid(row=0, column=0, padx=8, pady=5)
-        self.btn_skip = ctk.CTkButton(button_frame, text="⏭️ 跳过此题", command=self.skip_question, width=120, height=34, font=ctk.CTkFont(family='Microsoft YaHei UI', size=13), fg_color="#f39c12", hover_color="#d68910")
-        self.btn_skip.grid(row=0, column=1, padx=8, pady=5)
-        self.btn_show = ctk.CTkButton(button_frame, text="💡 查看答案", command=self.show_answer, width=120, height=34, font=ctk.CTkFont(family='Microsoft YaHei UI', size=13), fg_color="#8e44ad", hover_color="#7d3c98")
-        self.btn_show.grid(row=0, column=2, padx=8, pady=5)
-        self.btn_next = ctk.CTkButton(button_frame, text="➡️ 下一题", command=self.next_question, width=120, height=34, font=ctk.CTkFont(family='Microsoft YaHei UI', size=13), fg_color="#2980b9", hover_color="#2471a3")
-        self.btn_next.grid(row=0, column=3, padx=8, pady=5)
-        self._register_font('btn_submit', 'Microsoft YaHei UI', 13, weight='bold')
-        self._register_font('btn_skip', 'Microsoft YaHei UI', 13)
-        self._register_font('btn_show', 'Microsoft YaHei UI', 13)
-        self._register_font('btn_next', 'Microsoft YaHei UI', 13)
-
-        bottom_scroll = ctk.CTkScrollableFrame(
-            bottom_frame, fg_color="transparent",
-            scrollbar_button_color="#3498db", scrollbar_button_hover_color="#2980b9")
-        bottom_scroll.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        bottom_scroll.columnconfigure(0, weight=1)
-        self.bottom_scroll = bottom_scroll
-
-        ai_wrap, ai_frame, ai_title = ctk_group(bottom_scroll, "🦙 AI 判定结果 (本地智能分析)", padding=10)
-        ai_wrap.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=3)
-        ai_frame.columnconfigure(0, weight=1)
-        # row0 是文本框，给最小高度保证可读；实际高度由 _sync_ai_minsize
-        # 按窗口大小动态放大，大窗口下能占更多空间
-        ai_frame.rowconfigure(0, weight=1, minsize=100)
-        self.ai_frame = ai_frame
-        self._register_font('ai_title', 'Microsoft YaHei UI', 13, weight='bold')
-
-        self.ai_result_text = ctk.CTkTextbox(ai_frame, font=ctk.CTkFont(family='Consolas', size=11))
-        self.ai_result_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        for _edit_keys in ('<Key>', '<BackSpace>', '<Delete>', '<Control-v>', '<Control-V>', '<Control-x>', '<Control-X>', '<Control-a>', '<Control-A>'):
-            self.ai_result_text.bind(_edit_keys, lambda e: "break")
-        self._register_font('ai_result_text', 'Consolas', 11)
-        # 兜底最小高度：AI 判定结果是核心输出，任何情况下都不允许被压没。
-        # 注意不能设 grid_propagate(False) +固定 height——那会把上限也钉死，
-        # 导致窗口变大时这块永远只有 90px。改为只保留 minsize。
-        self.ai_result_text.grid_propagate(True)
-
-        manual_judge_frame = ctk.CTkFrame(ai_frame, fg_color="transparent")
-        manual_judge_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=8)
-
-        self.btn_mark_correct = ctk.CTkButton(manual_judge_frame, text="✅ 标记为正确", command=self.mark_as_correct, width=150, font=ctk.CTkFont(family='Microsoft YaHei UI', size=13), fg_color="#27ae60", hover_color="#219a52")
-        self.btn_mark_correct.pack(side=tk.LEFT, padx=6)
-
-        self.btn_mark_wrong = ctk.CTkButton(manual_judge_frame, text="❌ 标记为错误", command=self.mark_as_wrong, width=150, font=ctk.CTkFont(family='Microsoft YaHei UI', size=13), fg_color="#c0392b", hover_color="#a93226")
-        self.btn_mark_wrong.pack(side=tk.LEFT, padx=6)
-        self._register_font('btn_mark_correct', 'Microsoft YaHei UI', 13)
-        self._register_font('btn_mark_wrong', 'Microsoft YaHei UI', 13)
-
-        self.last_judgment_info = None
-
-        act_wrap, action_frame, act_title = ctk_group(bottom_scroll, "🎯 操作面板", padding=10)
-        act_wrap.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=3)
-        self._register_font('act_title', 'Microsoft YaHei UI', 13, weight='bold')
-
-        self.btn_new_round = ctk.CTkButton(action_frame, text="🔄 开始新一轮复习", command=self.start_new_round, width=160, font=ctk.CTkFont(family='Microsoft YaHei UI', size=13), fg_color="#8e44ad", hover_color="#7d3c98")
-        self.btn_new_round.grid(row=0, column=0, padx=8, pady=6)
-        self.btn_export_wrong = ctk.CTkButton(action_frame, text="📥 导出错题本", command=self.export_wrong_answers, width=140, font=ctk.CTkFont(family='Microsoft YaHei UI', size=13), fg_color="#e67e22", hover_color="#ca6f1e")
-        self.btn_export_wrong.grid(row=0, column=1, padx=8, pady=6)
-        self.btn_export_log = ctk.CTkButton(action_frame, text="📤 导出AI判定日志", command=self.export_ai_logs, width=160, font=ctk.CTkFont(family='Microsoft YaHei UI', size=13), fg_color="#16a085", hover_color="#138d75")
-        self.btn_export_log.grid(row=0, column=2, padx=8, pady=6)
-        self.btn_reset = ctk.CTkButton(action_frame, text="🗑️ 重置", command=self.reset_app, width=100, font=ctk.CTkFont(family='Microsoft YaHei UI', size=13), fg_color="#95a5a6", hover_color="#7f8c8d")
-        self.btn_reset.grid(row=0, column=3, padx=8, pady=6)
-        self._register_font('btn_new_round', 'Microsoft YaHei UI', 13)
-        self._register_font('btn_export_wrong', 'Microsoft YaHei UI', 13)
-        self._register_font('btn_export_log', 'Microsoft YaHei UI', 13)
-        self._register_font('btn_reset', 'Microsoft YaHei UI', 13)
-
-        # PanedWindow 默认把下半区撑满，题目区会被挤出视野。
-        # 布局稳定后按「题目区优先」重新分配 sash 初始位置。
-        self.main_paned = main_paned
-        self._sash_ready = False
-        self.root.after(150, self._init_sash_position)
-        main_paned.bind('<Configure>', self._on_paned_configure)
-
-        self._build_compact_panel(parent)
-        self._compact_mode = False
-        self.root.after(320, self._maybe_switch_compact)
-
-    # ==========================================================
-    # 简洁模式（低分辨率自动启用）
-    # ==========================================================
-
-    COMPACT_MAX_W = 960
-    COMPACT_MAX_H = 730
-
-    def _build_compact_panel(self, parent):
-        """构建简洁模式面板。
-
-        低分辨率（小窗口/小屏）下完整界面必然要把题目区和AI 区挤没，
-        所以另建一套极简布局，只保留 5 样东西：
-            1. 判定结果（正确 / 错误）
-            2. 正确答案
-            3. 单词
-            4. 词性
-            5. 输入框（含提交）
-        顶部只留一条极简工具条用于换文件与退出简洁模式。
-        """
-        wrap = ctk.CTkFrame(
-            parent, fg_color="#21252b", corner_radius=16,
-            border_width=1, border_color="#33383f")
-        self.compact_frame = wrap
+        wrap = ctk.CTkFrame(parent, fg_color="#21252b", corner_radius=12,
+                             border_width=1, border_color="#33383f")
+        wrap.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=8, pady=5)
         wrap.columnconfigure(0, weight=1)
-        # row2 是单词区，吃掉剩余高度；其余行固定
-        wrap.rowconfigure(2, weight=1)
+        wrap.rowconfigure(3, weight=1)   # 单词卡吃掉剩余高度
+        self.main_wrap = wrap
 
-        # ---- 顶部极简工具条 ----
+        # ---- 顶部工具条：文件信息 + 文件 / AI / 更多 三个胶囊 ----
         bar = ctk.CTkFrame(wrap, fg_color="transparent")
-        bar.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=16, pady=(12, 0))
+        bar.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=14, pady=(10, 0))
         bar.columnconfigure(0, weight=1)
 
-        self.compact_file_label = ctk.CTkLabel(
-            bar, text="📄 未选择文件", anchor="w",
-            font=ctk.CTkFont(family="Microsoft YaHei UI", size=12),
+        self.file_label = ctk.CTkLabel(
+            bar, text="未选择文件", anchor="w",
+            font=ctk.CTkFont(family='Microsoft YaHei UI', size=12),
             text_color="#8b95a3")
-        self.compact_file_label.grid(row=0, column=0, sticky=tk.W)
+        self.file_label.grid(row=0, column=0, sticky=tk.W)
 
-        self.btn_compact_load = ctk.CTkButton(
-            bar, text="📂", width=38, height=30, command=self.load_csv,
-            fg_color="#2f3540", hover_color="#3b424f")
-        self.btn_compact_load.grid(row=0, column=1, padx=4)
+        self.btn_file = self._pill(bar, "文件", self.load_csv, width=48)
+        self.btn_file.grid(row=0, column=1, padx=(0, 6))
 
-        self.btn_compact_exit = ctk.CTkButton(
-            bar, text="⤢", width=38, height=30,
-            command=lambda: self._on_toggle_compact_main_exit(),
-            fg_color="#2f3540", hover_color="#3b424f")
-        self.btn_compact_exit.grid(row=0, column=2, padx=(0, 2))
+        self.btn_ai = self._pill(bar, "AI", self._goto_ai_settings, width=40)
+        self.btn_ai.grid(row=0, column=2, padx=(0, 6))
 
-        # ---- 判定结果卡片 ----
-        self.compact_verdict_card = ctk.CTkFrame(
-            wrap, fg_color="#2b313b", corner_radius=14, height=64)
-        self.compact_verdict_card.grid(row=1, column=0, sticky=(tk.W, tk.E), padx=16, pady=(12, 0))
-        self.compact_verdict_card.grid_propagate(False)
-        self.compact_verdict_card.columnconfigure(0, weight=1)
+        self.btn_more = self._pill(bar, "⋯", self._toggle_more_menu, width=34)
+        self.btn_more.grid(row=0, column=3)
 
-        self.compact_verdict_label = ctk.CTkLabel(
-            self.compact_verdict_card, text="✍️ 等待作答",
-            font=ctk.CTkFont(family="Microsoft YaHei UI", size=22, weight="bold"),
+        self._register_font('file_label', 'Microsoft YaHei UI', 12)
+        self._register_font('btn_file', 'Microsoft YaHei UI', 12)
+        self._register_font('btn_ai', 'Microsoft YaHei UI', 12)
+        self._register_font('btn_more', 'Microsoft YaHei UI', 12)
+
+        # ---- 状态行：轮次 / 进度 / 对错 / AI 状态 合并为一行 ----
+        self._ai_status_text = "Ollama 未连接"
+        self.status_label = ctk.CTkLabel(
+            wrap, text="第 1 轮 · 0/0 · 对 0 错 0 · Ollama 未连接", anchor="w",
+            font=ctk.CTkFont(family='Microsoft YaHei UI', size=12),
+            text_color="#7f8896")
+        self.status_label.grid(row=1, column=0, sticky=(tk.W, tk.E), padx=14, pady=(6, 0))
+        self._register_font('status_label', 'Microsoft YaHei UI', 12)
+
+        # ---- 判定卡：状态文字 + 查看答案 / 跳过 / 改对 / 改错 ----
+        self.verdict_card = ctk.CTkFrame(wrap, fg_color="#2b313b", corner_radius=12)
+        self.verdict_card.grid(row=2, column=0, sticky=(tk.W, tk.E), padx=14, pady=(10, 0))
+
+        self.verdict_label = ctk.CTkLabel(
+            self.verdict_card, text="等待作答", anchor="w",
+            font=ctk.CTkFont(family='Microsoft YaHei UI', size=24),
             text_color="#9aa4b2")
-        self.compact_verdict_label.grid(row=0, column=0, sticky="w", padx=18)
+        self.verdict_label.grid(row=0, column=0, sticky=tk.W, padx=14, pady=11)
 
-        # ---- 正确答案卡片 ----
-        ans_card = ctk.CTkFrame(
-            wrap, fg_color="#2b313b", corner_radius=14)
-        ans_card.grid(row=3, column=0, sticky=(tk.W, tk.E), padx=16, pady=(10, 0))
-        ans_card.columnconfigure(0, weight=1)
+        verdict_btns = ctk.CTkFrame(self.verdict_card, fg_color="transparent")
+        verdict_btns.grid(row=0, column=1, sticky=tk.E, padx=(0, 10), pady=10)
 
-        ctk.CTkLabel(
-            ans_card, text="正确答案", anchor="w",
-            font=ctk.CTkFont(family="Microsoft YaHei UI", size=12),
-            text_color="#7f8896").grid(row=0, column=0, sticky=tk.W, padx=16, pady=(10, 0))
+        self.btn_view_answer = self._pill(verdict_btns, "查看答案", self._reveal_answer,
+                                          width=68, fg_color="#3a4150")
+        self.btn_view_answer.grid(row=0, column=0, padx=(0, 6))
 
-        self.compact_answer_label = ctk.CTkLabel(
-            ans_card, text="-", anchor="w", justify="left",
-            font=ctk.CTkFont(family="Microsoft YaHei UI", size=18, weight="bold"),
-            text_color="#f0f3f7")
-        self.compact_answer_label.grid(row=1, column=0, sticky=tk.W, padx=16, pady=(2, 12))
+        self.btn_skip = self._pill(verdict_btns, "跳过", self.skip_question,
+                                   width=48, fg_color="#3a4150")
+        self.btn_skip.grid(row=0, column=1, padx=(0, 6))
+
+        self.btn_mark_correct = self._pill(verdict_btns, "改对", self.mark_as_correct,
+                                            width=48, fg_color="#3a4150")
+        self.btn_mark_correct.grid(row=0, column=2, padx=(0, 6))
+
+        self.btn_mark_wrong = self._pill(verdict_btns, "改错", self.mark_as_wrong,
+                                          width=48, fg_color="#3a4150")
+        self.btn_mark_wrong.grid(row=0, column=3)
+
+        self._register_font('verdict_label', 'Microsoft YaHei UI', 24)
+        for _attr in ('btn_view_answer', 'btn_skip', 'btn_mark_correct', 'btn_mark_wrong'):
+            self._register_font(_attr, 'Microsoft YaHei UI', 12)
 
         # ---- 单词 + 词性 ----
-        word_card = ctk.CTkFrame(
-            wrap, fg_color="#282e38", corner_radius=16,
-            border_width=1, border_color="#39404b")
-        word_card.grid(row=2, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=16, pady=(10, 0))
-        word_card.columnconfigure(0, weight=1)
-        word_card.rowconfigure(0, weight=1)
-        word_card.bind('<Configure>',
-                       lambda e: self._update_compact_fonts() if e.widget is word_card else None)
+        self.word_card = ctk.CTkFrame(
+            wrap, fg_color="#282e38", corner_radius=12,
+            border_width=1, border_color="#39404f")
+        self.word_card.grid(row=3, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=14, pady=(10, 0))
+        self.word_card.columnconfigure(0, weight=1)
+        self.word_card.rowconfigure(0, weight=1)
+        self.word_card.bind('<Configure>',
+                            lambda e: self._update_question_fonts() if e.widget is self.word_card else None)
 
-        # 单词与词性作为一个整体垂直居中。
-        # 用 pack 而不是 grid：CTkLabel 在 grid 里不会被真正拉伸，
-        # 文字仍贴在各自格子顶部，看起来像被拉开。
-        holder = ctk.CTkFrame(word_card, fg_color="transparent")
-        holder.pack(fill="both", expand=True, padx=14, pady=10)
-        # 上下各留一个弹性行，把「单词 + 词性」顶到卡片垂直中央。
-        # 用 grid 而不是 pack：pack 的 expand 会把后面 pack 的控件挤没。
+        holder = ctk.CTkFrame(self.word_card, fg_color="transparent")
+        holder.pack(fill="both", expand=True, padx=14, pady=18)
         holder.columnconfigure(0, weight=1)
+        # 上下各留一段弹性空白，让「单词 + 词性」这一组整体垂直居中，
+        # 否则词性会被 row weight 顶到卡片底部，和设计稿差很远。
         holder.rowconfigure(0, weight=1)
         holder.rowconfigure(3, weight=1)
 
-        self.compact_word_label = ctk.CTkLabel(
-            holder, text="-", anchor="center", justify="center",
-            font=ctk.CTkFont(family="Microsoft YaHei UI", size=40, weight="bold"),
-            text_color="#7fc4ff")
-        self.compact_word_label.grid(row=1, column=0, sticky="ew")
+        self.col1_value = ctk.CTkLabel(
+            holder, text="-", font=ctk.CTkFont(family='Microsoft YaHei UI', size=32, weight="bold"),
+            text_color="#7fc4ff", anchor="center", justify="center")
+        self.col1_value.grid(row=1, column=0, sticky="ew")
 
-        self.compact_pos_label = ctk.CTkLabel(
-            holder, text="-", anchor="center", justify="center",
-            font=ctk.CTkFont(family="Microsoft YaHei UI", size=22, slant="italic"),
-            text_color="#f1948a")
-        self.compact_pos_label.grid(row=2, column=0, sticky="ew", pady=(10, 0))
+        self.col2_value = ctk.CTkLabel(
+            holder, text="-", font=ctk.CTkFont(family='Microsoft YaHei UI', size=18),
+            text_color="#f1948a", anchor="center", justify="center")
+        self.col2_value.grid(row=2, column=0, sticky="ew", pady=(4, 0))
 
-        # ---- 输入框 + 提交 ----
+        # ---- 正确答案卡 ----
+        self.answer_card = ctk.CTkFrame(wrap, fg_color="#2b313b", corner_radius=12)
+        self.answer_card.grid(row=4, column=0, sticky=(tk.W, tk.E), padx=14, pady=(10, 0))
+
+        ctk.CTkLabel(
+            self.answer_card, text="正确答案", anchor="w",
+            font=ctk.CTkFont(family='Microsoft YaHei UI', size=12),
+            text_color="#7f8896").grid(row=0, column=0, sticky=tk.W, padx=14, pady=(9, 0))
+
+        self.answer_value_label = ctk.CTkLabel(
+            self.answer_card, text="· · ·", anchor="w", justify="left",
+            font=ctk.CTkFont(family='Microsoft YaHei UI', size=16),
+            text_color="#f0f3f7")
+        self.answer_value_label.grid(row=1, column=0, sticky=tk.W, padx=14, pady=(2, 10))
+
+        # ---- 输入行 + 提交 ----
         entry_card = ctk.CTkFrame(wrap, fg_color="transparent")
-        entry_card.grid(row=4, column=0, sticky=(tk.W, tk.E), padx=16, pady=(12, 16))
+        entry_card.grid(row=5, column=0, sticky=(tk.W, tk.E), padx=14, pady=(12, 0))
         entry_card.columnconfigure(0, weight=1)
 
-        self.compact_entry = ctk.CTkEntry(
-            entry_card, height=44, placeholder_text="在这里默写单词…  （回车提交）",
-            font=ctk.CTkFont(family="Microsoft YaHei UI", size=16),
-            fg_color="#1b1f25", border_color="#39404b", border_width=1,
+        self.answer_entry = ctk.CTkEntry(
+            entry_card, height=40, corner_radius=10,
+            font=ctk.CTkFont(family='Microsoft YaHei UI', size=15),
+            fg_color="#1b1f25", border_color="#39404f", border_width=1,
             text_color="#f0f3f7")
-        self.compact_entry.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=(0, 8))
-        self.compact_entry.bind('<Return>', lambda e: self._compact_submit())
+        self.answer_entry.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=(0, 8))
+        self.answer_entry.bind('<Return>', self._submit_current)
+        self.answer_entry.bind('<Key>', lambda e: self._entry_key_down(self.answer_entry, e))
 
-        self.btn_compact_submit = ctk.CTkButton(
-            entry_card, text="提交", width=120, height=44,
-            command=self._compact_submit,
-            font=ctk.CTkFont(family="Microsoft YaHei UI", size=16, weight="bold"),
-            fg_color="#27ae60", hover_color="#219a52")
-        self.btn_compact_submit.grid(row=0, column=1)
+        # CTk 6.0 的占位符在获得焦点时会被删掉、且和内部 Entry 状态不同步，
+        # 这里改成自绘提示层：输入框为空时显示，点击提示也能聚焦输入框。
+        self.entry_hint = ctk.CTkLabel(
+            entry_card, text="在这里默写单词…（回车提交）", anchor="w",
+            fg_color="#1b1f25", corner_radius=0,
+            font=ctk.CTkFont(family='Microsoft YaHei UI', size=15),
+            text_color="#6f7986")
+        self.entry_hint.place(relx=0.0, rely=0.5, x=14, anchor="w")
+        self.entry_hint.bind('<Button-1>', lambda e: self.answer_entry.focus_set())
+        self.answer_entry.bind('<<Modified>>',
+                               lambda e: self._sync_entry_hint(), add='+')
 
-        self._compact_verdict = None
+        self.btn_submit = ctk.CTkButton(
+            entry_card, text="提交", width=84, height=40, corner_radius=10,
+            command=self._submit_current,
+            font=ctk.CTkFont(family='Microsoft YaHei UI', size=15),
+            fg_color="#27ae60", hover_color="#219a52", text_color="#ffffff")
+        self.btn_submit.grid(row=0, column=1)
 
-    def _on_answer_entry_return(self, event=None):
-        """完整模式答案框的回车。简洁模式下转发给简洁入口。"""
-        if getattr(self, "_compact_mode", False):
-            self._compact_submit()
-            return "break"
-        self.submit_answer()
+        self._register_font('answer_entry', 'Microsoft YaHei UI', 15)
+        self._register_font('entry_hint', 'Microsoft YaHei UI', 15)
+        self._register_font('btn_submit', 'Microsoft YaHei UI', 15)
 
-    def _on_toggle_compact_main_exit(self):
-        """简洁模式右上角 ⤢：退出简洁并回到自动判定。"""
-        self._compact_override = None
+        # ---- AI 判定详情（可折叠）----
+        self.detail_frame = ctk.CTkFrame(wrap, fg_color="#2b313b", corner_radius=10)
+        self.detail_frame.grid(row=6, column=0, sticky=(tk.W, tk.E), padx=14, pady=(10, 14))
+        # 列要可伸缩，否则展开后文本框只有 200px 宽，不随窗口变化
+        self.detail_frame.columnconfigure(0, weight=1)
+
+        self.btn_detail = ctk.CTkButton(
+            self.detail_frame, text="AI 判定详情", command=self._toggle_detail,
+            width=120, height=28, anchor="w",
+            fg_color="transparent", hover_color="#3b424f",
+            font=ctk.CTkFont(family='Microsoft YaHei UI', size=12), text_color="#8b95a3")
+        self.btn_detail.grid(row=0, column=0, sticky=tk.W, padx=10, pady=6)
+
+        self.detail_arrow = ctk.CTkLabel(
+            self.detail_frame, text="▾", width=20,
+            font=ctk.CTkFont(family='Microsoft YaHei UI', size=12), text_color="#8b95a3")
+        self.detail_arrow.grid(row=0, column=1, sticky=tk.E, padx=(0, 12))
+        self.detail_arrow.bind("<Button-1>", lambda e: self._toggle_detail())
+        self._register_font('btn_detail', 'Microsoft YaHei UI', 12)
+        self._register_font('detail_arrow', 'Microsoft YaHei UI', 12)
+
+        self.ai_frame = ctk.CTkFrame(self.detail_frame, fg_color="transparent")
+        self.ai_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), padx=8, pady=(0, 8))
+        self.ai_frame.columnconfigure(0, weight=1)
+        self.ai_frame.rowconfigure(0, weight=1)
+
+        self.ai_result_text = ctk.CTkTextbox(
+            self.ai_frame, height=150,
+            font=ctk.CTkFont(family='Consolas', size=11))
+        self.ai_result_text.grid(row=0, column=0, sticky=(tk.W, tk.E))
+        for _edit_keys in ('<Key>', '<BackSpace>', '<Delete>', '<Control-v>', '<Control-V>',
+                           '<Control-x>', '<Control-X>', '<Control-a>', '<Control-A>'):
+            self.ai_result_text.bind(_edit_keys, lambda e: "break")
+        self._register_font('ai_result_text', 'Consolas', 11)
+
+        self._detail_expanded = False
+        self.ai_frame.grid_remove()
+
+        self._more_menu = None
+        self._answer_revealed = False
+
+    # ==========================================================
+    # 设计稿风格的小控件
+    # ==========================================================
+
+    @staticmethod
+    def _pill(parent, text, command, width=48, fg_color="#2f3540"):
+        """顶栏/卡片里的胶囊小按钮。"""
+        btn = ctk.CTkButton(
+            parent, text=text, command=command, width=width, height=26,
+            corner_radius=7, fg_color=fg_color, hover_color="#3b424f",
+            text_color="#cfd6df",
+            font=ctk.CTkFont(family='Microsoft YaHei UI', size=12))
+        # 记录基准尺寸，窗口缩放时按钮宽高跟着字号一起缩，避免小字配大按钮
+        btn._pill_base = (width, 26)
+        return btn
+
+    def _goto_ai_settings(self):
+        """顶栏「AI」胶囊：跳到 AI 设置页。"""
         try:
-            self.compact_switch_var_main.set(False)
+            self.notebook.select("🤖 AI设置 (Ollama)")
         except Exception:
             pass
-        self._apply_compact_mode(False)
 
-    def _compact_submit(self):
-        """简洁模式的提交/前进。
+    def _reveal_answer(self):
+        """「查看答案」：直接显示标准答案（不判定）。"""
+        if not self.current_csv_data or self.current_index >= len(self.current_csv_data):
+            return
+        row = self.current_csv_data[self.current_index]
+        correct = row[2] if len(row) > 2 else ""
+        clean_display = clean_answer_string(correct, self.ai_assistant)
+        self._answer_revealed = True
+        try:
+            self.answer_value_label.configure(text=clean_display or "· · ·")
+        except Exception:
+            pass
+        try:
+            self.ai_result_text.insert(tk.END, f"\n💡 正确答案: {clean_display}\n")
+            self.ai_result_text.see(tk.END)
+        except Exception:
+            pass
 
-        分两种意图：
-        - 本题还没判定 → 提交答案，走正常判定流程
-        - 本题已经判定 → 视为「看完了，下一题」
+    # ==========================================================
+    # 「⋯ 更多」浮层
+    # ==========================================================
+
+    def _build_more_menu(self):
+        """低频操作的浮层面板（自绘，CustomTkinter 6.0 没有 CTkMenu）。"""
+        menu = ctk.CTkFrame(self.main_wrap, fg_color="#21252b", corner_radius=12,
+                             border_width=1, border_color="#33383f")
+        menu.grid_columnconfigure(0, weight=1)
+
+        head = ctk.CTkFrame(menu, fg_color="transparent")
+        head.grid(row=0, column=0, sticky="ew", padx=12, pady=(9, 0))
+        head.columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(head, text="更多操作", anchor="w",
+                     font=ctk.CTkFont(family='Microsoft YaHei UI', size=12),
+                     text_color="#8b95a3").grid(row=0, column=0, sticky="w")
+
+        btn_close = ctk.CTkButton(
+            head, text="✕", command=self._close_more_menu, width=24, height=22,
+            corner_radius=6, fg_color="transparent", hover_color="#3b424f",
+            text_color="#8b95a3",
+            font=ctk.CTkFont(family='Microsoft YaHei UI', size=12))
+        btn_close.grid(row=0, column=1, sticky="e")
+
+        sep = ctk.CTkFrame(menu, height=1, fg_color="#33383f")
+        sep.grid(row=1, column=0, sticky="ew", padx=12, pady=(6, 4))
+
+        items = [
+            ("保存进度", self.save_progress, False),
+            ("读取进度", self.load_progress, False),
+            ("开始新一轮复习", self.start_new_round, False),
+            ("导出错题本", self.export_wrong_answers, False),
+            ("导出 AI 判定日志", self.export_ai_logs, False),
+            ("重置", self.reset_app, True),
+        ]
+        row = 2
+        for idx, (text, cmd, danger) in enumerate(items):
+            btn = ctk.CTkButton(
+                menu, text=text, height=30, anchor="w",
+                command=lambda c=cmd: self._run_more(c),
+                fg_color="transparent", hover_color="#2b313b",
+                font=ctk.CTkFont(family='Microsoft YaHei UI', size=12),
+                text_color="#f09595" if danger else "#dfe4ea")
+            btn.grid(row=row, column=0, sticky="ew", padx=6, pady=1)
+            row += 1
+            if idx < len(items) - 1:
+                line = ctk.CTkFrame(menu, height=1, fg_color="#2c313a")
+                line.grid(row=row, column=0, sticky="ew", padx=12)
+                row += 1
+        return menu
+
+    def _toggle_more_menu(self):
+        menu = self._more_menu
+        if menu is None:
+            menu = self._build_more_menu()
+            self._more_menu = menu
+        try:
+            if menu.winfo_ismapped():
+                self._close_more_menu()
+            else:
+                menu.place(relx=1.0, rely=0.0, x=-14, y=42, anchor="ne")
+        except Exception:
+            pass
+
+    def _close_more_menu(self):
+        try:
+            if self._more_menu is not None:
+                self._more_menu.place_forget()
+        except Exception:
+            pass
+
+    def _run_more(self, cmd):
+        self._close_more_menu()
+        try:
+            cmd()
+        except Exception:
+            pass
+
+    def _on_global_escape(self, event=None):
+        """Esc 关闭浮层。"""
+        self._close_more_menu()
+
+    def _on_global_click(self, event):
+        """点击浮层外部时关闭「⋯ 更多」浮层。"""
+        menu = getattr(self, "_more_menu", None)
+        if menu is None:
+            return
+        try:
+            if not menu.winfo_ismapped():
+                return
+        except Exception:
+            return
+        widget = getattr(event, "widget", None)
+        if widget is None:
+            return
+        if self._is_descendant(widget, menu):
+            return
+        btn_more = getattr(self, "btn_more", None)
+        if btn_more is not None and self._is_descendant(widget, btn_more):
+            return
+        self._close_more_menu()
+
+    @staticmethod
+    def _is_descendant(widget, ancestor):
+        """判断 widget 是否是 ancestor 的后代（含自身）。"""
+        try:
+            node = widget
+            while node is not None:
+                if node is ancestor:
+                    return True
+                node = getattr(node, "master", None)
+            return False
+        except Exception:
+            return False
+
+    # ==========================================================
+    # AI 判定详情折叠
+    # ==========================================================
+
+    def _toggle_detail(self):
+        self._set_detail_expanded(not self._detail_expanded)
+
+    def _set_detail_expanded(self, expanded):
+        self._detail_expanded = expanded
+        try:
+            if expanded:
+                self.ai_frame.grid()
+                self.btn_detail.configure(text="AI 判定详情")
+                self.detail_arrow.configure(text="▴")
+            else:
+                self.ai_frame.grid_remove()
+                self.btn_detail.configure(text="AI 判定详情")
+                self.detail_arrow.configure(text="▾")
+        except Exception:
+            pass
+
+    # ==========================================================
+    # 提交 / 判定
+    # ==========================================================
+
+    def _submit_current(self, event=None):
+        """提交按钮与回车的统一入口。
+
+        未判定 → 提交作答；已判定 → 进入下一题。
+
+        注意：作为 Entry 的 '<Return>' 绑定回调时，Tkinter 会传入 event 对象，
+        因此这里必须允许额外位置参数；返回 "break" 可阻止默认的蜂鸣行为。
         """
         info = getattr(self, "last_judgment_info", None)
-        already_judged = bool(info) and info.get("index") == self.current_index
-
-        if already_judged:
+        if info and info.get("index") == self.current_index:
             self.next_question()
-            try:
-                self.compact_entry.delete(0, tk.END)
-                self.compact_entry.focus_set()
-            except Exception:
-                pass
+            return "break"
+        if self.submit_answer(self._entry_text(self.answer_entry)):
+            self._clear_entry(self.answer_entry)
+        return "break"
+
+    def _refresh_verdict(self):
+        """刷新判定卡、正确答案卡与提交按钮状态。"""
+        if getattr(self, "verdict_card", None) is None:
             return
-
-        text = self.compact_entry.get()
-        try:
-            self.answer_entry.delete(0, tk.END)
-            self.answer_entry.insert(0, text)
-        except Exception:
-            pass
-        self.submit_answer()
-        try:
-            self.compact_entry.delete(0, tk.END)
-        except Exception:
-            pass
-
-    def _refresh_compact_verdict(self):
-        """刷新简洁模式的判定结果与正确答案。
-
-        铁律：**只有本题已经判定过，才允许显示正确答案**。
-        否则用户一进题目就看到答案，等于直接抄，默写就失去意义了。
-
-        判定来源用 last_judgment_info 而不是解析 AI 文本框：
-        - 它带 index，能判断这条判定是否属于当前题，
-          换题后自动失效，不会把上一题的答案带到下一题；
-        - 文本解析不可靠，tail 里残留的历史判定会被反复读到。
-        """
-        if getattr(self, "compact_frame", None) is None:
-            return
-
         info = getattr(self, "last_judgment_info", None)
         judged = bool(info) and info.get("index") == self.current_index
 
@@ -1447,247 +1369,172 @@ class CSVLearningApp:
             state = "correct" if info.get("is_correct") else "wrong"
             answer = info.get("correct_answer") or ""
 
-        self._compact_verdict = state
         palette = {
-            "correct": ("#1e3d2c", "#4ade80", "✅  判定正确"),
-            "wrong": ("#43222a", "#f87171", "❌  判定错误"),
+            "correct": ("#4ade80", "判定正确"),
+            "wrong": ("#f87171", "判定错误"),
         }
         if state in palette:
-            bg, fg, text = palette[state]
-            self.compact_verdict_card.configure(fg_color=bg)
-            self.compact_verdict_label.configure(text=text, text_color=fg)
+            fg, text = palette[state]
+            self.verdict_card.configure(fg_color="#2b313b")
+            self.verdict_label.configure(text=text, text_color=fg)
         else:
-            self.compact_verdict_card.configure(fg_color="#2b313b")
-            self.compact_verdict_label.configure(
-                text="✍️  等待作答" if self.current_csv_data else "📂  请先选择 CSV 文件",
-                text_color="#9aa4b2")
+            self.verdict_card.configure(fg_color="#2b313b")
+            self.verdict_label.configure(text="等待作答", text_color="#9aa4b2")
 
-        # 未判定 → 隐藏答案，只留占位符
+        # 判定前不显示答案，避免照抄（除非用户主动点了「查看答案」）
         try:
-            if answer:
-                self.compact_answer_label.configure(
-                    text=clean_answer_string(answer, self.ai_assistant))
+            if judged:
+                shown = clean_answer_string(answer, self.ai_assistant) if answer else "· · ·"
+            elif getattr(self, "_answer_revealed", False):
+                row = self.current_csv_data[self.current_index]
+                raw = row[2] if len(row) > 2 else ""
+                shown = clean_answer_string(raw, self.ai_assistant) or "· · ·"
             else:
-                self.compact_answer_label.configure(text="· · ·")
+                shown = "· · ·"
+            self.answer_value_label.configure(text=shown)
         except Exception:
             pass
-        self._sync_compact_submit_button(state)
-        self._update_compact_fonts()
 
-    def _sync_compact_submit_button(self, state):
-        """判定完成后，提交键变成「下一题」。
+        try:
+            if judged:
+                self.btn_skip.grid_remove()
+                self.btn_mark_correct.grid()
+                self.btn_mark_wrong.grid()
+                self.btn_submit.configure(text="下一题", fg_color="#2980b9", hover_color="#2471a3")
+            else:
+                self.btn_skip.grid()
+                self.btn_mark_correct.grid_remove()
+                self.btn_mark_wrong.grid_remove()
+                self.btn_submit.configure(text="提交", fg_color="#27ae60", hover_color="#219a52")
+        except Exception:
+            pass
 
-        按钮语义跟随 _compact_submit 的实际行为：
-        未判定 → 提交答案；已判定 → 前进到下一题。
-        """
-        btn = getattr(self, "btn_compact_submit", None)
-        if btn is None:
+    # ==========================================================
+    # 输入框：灰色提示层 + 真实文本读取
+    # ==========================================================
+    # 不使用 CTkEntry 自带的 placeholder：它在获得焦点时会被删掉，且标志
+    # (_placeholder_text_active) 与内部 Entry 状态容易脱同步，导致 get()
+    # 恒返回空串、用户输入被吞。改为自绘提示层，行为完全可控。
+
+    def _entry_text(self, entry):
+        """读取输入框真实文本。"""
+        try:
+            return entry._entry.get()
+        except Exception:
+            try:
+                return entry.get()
+            except Exception:
+                return ""
+
+    def _sync_entry_hint(self):
+        """输入框为空时显示灰色提示层，有内容时隐藏。"""
+        entry = getattr(self, "answer_entry", None)
+        hint = getattr(self, "entry_hint", None)
+        if entry is None or hint is None:
             return
         try:
-            if state in ("correct", "wrong"):
-                btn.configure(text="➡️ 下一题", fg_color="#2980b9", hover_color="#2471a3")
+            empty = entry._entry.get() == ""
+        except Exception:
+            empty = False
+        try:
+            if empty:
+                hint.place(relx=0.0, rely=0.5, x=14, anchor="w")
             else:
-                btn.configure(text="提交", fg_color="#27ae60", hover_color="#219a52")
+                hint.place_forget()
         except Exception:
             pass
-        # 输入框提示同步，让用户知道现在回车会干什么
-        entry = getattr(self, "compact_entry", None)
-        if entry is not None:
+        # Tk 的 modified 标志置位后不再重复派发 <<Modified>>，
+        # 这里手动清零，保证「删到空 → 又提示」能再次触发。
+        try:
+            entry._entry.edit_modified(False)
+        except Exception:
+            pass
+
+    def _clear_entry(self, entry):
+        """清空输入框，并同步灰色提示层的显隐。"""
+        try:
+            entry.delete(0, tk.END)
+        except Exception:
+            pass
+        self._sync_entry_hint()
+
+    def _set_entry_hint(self, entry, text):
+        """安全更换输入框提示文字。
+
+        现在提示文字由自绘的 entry_hint 层承担，这里只改文案。
+        """
+        hint = getattr(self, "entry_hint", None)
+        if hint is not None:
             try:
-                if state in ("correct", "wrong"):
-                    entry.configure(placeholder_text="看完了，回车进入下一题")
-                else:
-                    entry.configure(placeholder_text="在这里默写单词…  （回车提交）")
+                hint.configure(text=text)
             except Exception:
                 pass
 
-    def _update_compact_fonts(self):
-        """简洁模式下的单词/词性自适应：只按宽度收敛，字号上限更宽松。"""
-        if not getattr(self, "_compact_mode", False):
-            return
+    def _entry_key_down(self, entry, event=None):
+        """保留的按键钩子：目前提示层不依赖 CTk 占位符，无需额外处理。"""
+        return
+
+    # ==========================================================
+    # 单词 / 词性字号自适应
+    # ==========================================================
+
+    def _update_question_fonts(self):
+        """单词/词性字号自适应：依据文本实测宽度 + 卡片可用宽高。"""
         try:
-            self._do_update_compact_fonts()
+            self._do_update_question_fonts()
         except Exception:
-            # after 回调可能在窗口已销毁后仍触发，此时 tk 命令会报
-            # TclError，静默忽略即可。
+            # <Configure> / after 回调可能在窗口销毁后仍触发，静默忽略
             pass
 
-    def _do_update_compact_fonts(self):
-        word = self.compact_word_label.cget("text") or ""
-        pos = self.compact_pos_label.cget("text") or ""
-        card = self.compact_word_label.master.master
-        # 注意：label 用 pack 布局，自身宽高都只有文字那么大，
-        # 拿它算可用宽度会让字号被反复收缩到最小，必须用外层卡片尺寸。
-        avail = max(card.winfo_width() - 48, 40)
-        h = card.winfo_height()
-        if avail <= 40 or h <= 60:
+    def _do_update_question_fonts(self):
+        card = getattr(self, "word_card", None)
+        if card is None:
+            return
+        card_w = card.winfo_width()
+        card_h = card.winfo_height()
+        if card_w < 60 or card_h < 40:
             return
 
-        w_size = max(18, min(52, int(h * 0.34)))
-        p_size = max(12, int(w_size * 0.5))
+        word = self.col1_value.cget("text") or ""
+        pos = self.col2_value.cget("text") or ""
 
-        for _ in range(6):
-            over_w = self._text_px(word, w_size, True) > avail
-            over_p = self._text_px(pos, p_size, False) > avail
+        cache_key = (word, pos, card_w, card_h)
+        if self._question_size_cache.get("key") == cache_key:
+            return
+        self._question_size_cache["key"] = cache_key
+
+        # 宽度基准取外层容器，而不是单词卡自身：
+        # 单词卡会跟着文字变宽，若拿卡宽当基准，字号不减 → 越算越宽，
+        # 最终把内容顶出窗口（实测 apple 就把卡片撑到 1400px）。
+        wrap = getattr(self, "main_wrap", None)
+        base_w = wrap.winfo_width() if wrap is not None else card_w
+        avail_w = max(min(base_w, card_w) - 40, 40)
+        avail_h = max(card_h - 40, 20)
+
+        word_size = max(16, min(52, int(avail_h * 0.62)))
+        pos_size = max(12, int(word_size * 0.55))
+
+        def apply():
+            self.col1_value.configure(
+                font=ctk.CTkFont(family="Microsoft YaHei UI", size=word_size, weight="bold"))
+            self.col2_value.configure(
+                font=ctk.CTkFont(family="Microsoft YaHei UI", size=pos_size))
+
+        for _ in range(8):
+            self.root.update_idletasks()
+            need_w = self._text_px(word, word_size, True)
+            need_p = self._text_px(pos, pos_size, False)
+            over_w = need_w > avail_w * 0.96
+            over_p = need_p > avail_w * 0.96
             if not over_w and not over_p:
                 break
             if over_w:
-                w_size = max(14, int(w_size * 0.9) - 1)
+                word_size = max(14, int(word_size * min(1.0, avail_w * 0.96 / need_w)) - 1)
             if over_p:
-                p_size = max(11, int(p_size * 0.9) - 1)
-            p_size = min(p_size, max(12, int(w_size * 0.6)))
-
-        self.compact_word_label.configure(
-            font=ctk.CTkFont(family="Microsoft YaHei UI", size=w_size, weight="bold"))
-        self.compact_pos_label.configure(
-            font=ctk.CTkFont(family="Microsoft YaHei UI", size=p_size, slant="italic"))
-        self.compact_answer_label.configure(
-            font=ctk.CTkFont(family="Microsoft YaHei UI",
-                             size=max(13, min(22, int(w_size * 0.5))), weight="bold"))
-
-    def _sync_compact_widgets(self):
-        """把完整模式的内容同步到简洁模式。"""
-        if getattr(self, "compact_frame", None) is None:
-            return
-        try:
-            self.compact_word_label.configure(
-                text=self.col1_value.cget("text") or "-")
-            self.compact_pos_label.configure(
-                text=self.col2_value.cget("text") or "-")
-        except Exception:
-            pass
-        try:
-            name = self.csv_file_path or "未选择文件"
-            self.compact_file_label.configure(
-                text=f"📄 {name}" if self.csv_file_path else "📄 未选择文件")
-        except Exception:
-            pass
-        self._refresh_compact_verdict()
-        self.root.after(60, self._update_compact_fonts)
-
-    def _window_logical_size(self):
-        """返回窗口的逻辑宽高（用户感知尺寸）。
-
-        必须用它而不是 winfo_width()：CTk 的 geometry()/minsize() 都按
-        DPI 缩放，150% 缩放下设 720x560 实际拿到 1080x840 物理像素。
-        拿物理像素和 960 的逻辑阈值比较，会永远判定为"窗口够大"，
-        简洁模式就不触发了。
-        """
-        try:
-            s = self.root._get_window_scaling()
-        except Exception:
-            s = 1.0
-        if not s or s <= 0:
-            s = 1.0
-        return (self.root.winfo_width() / s, self.root.winfo_height() / s)
-
-    def _maybe_switch_compact(self):
-        w, h = self._window_logical_size()
-        if w <= 1 or h <= 1:
-            self.root.after(200, self._maybe_switch_compact)
-            return
-        should = self._should_use_compact(w, h)
-        # override 只有两种状态：
-        #   True → 强制简洁（用户手动开的，大窗口也保持）
-        #   None → 交给窗口尺寸自动判定
-        # 关闭开关等价于回到自动，不会把大窗口"锁死"在完整模式，
-        # 否则小窗口下也触发不了简洁了。
-        if self._compact_override is True:
-            self._apply_compact_mode(True)
-            return
-        self._apply_compact_mode(should)
-
-    @classmethod
-    def _should_use_compact(cls, w, h):
-        """分辨率/窗口尺寸过小 → 用简洁模式。"""
-        return w < cls.COMPACT_MAX_W or h < cls.COMPACT_MAX_H
-
-    def _on_toggle_compact_main(self):
-        """主页简洁模式开关。"""
-        if self.compact_switch_var_main.get():
-            self._compact_override = True
-            self._apply_compact_mode(True)
-        else:
-            # 关开关 = 回自动判定，不是锁死完整模式
-            self._compact_override = None
-            self._maybe_switch_compact()
-
-    def _apply_compact_mode(self, active, force=False):
-        if getattr(self, "compact_frame", None) is None:
-            return
-        if self._compact_mode == active and not force:
-            return
-        self._compact_mode = active
-        if active:
-            self.main_paned.grid_remove()
-            self.compact_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
-            self.root.minsize(420, 460)
-            self._sync_compact_widgets()
-            # 焦点可能还留在已被隐藏的 answer_entry 上，回车会走进
-            # 那个空控件导致「请输入答案」。主动搬到简洁输入框。
-            self.root.after(60, self._focus_compact_entry)
-            self.root.after(120, self._update_compact_fonts)
-        else:
-            self.compact_frame.grid_remove()
-            self.main_paned.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
-            self.root.minsize(720, 560)
-            self._sash_ready = False
-            self.root.after(80, self._init_sash_position)
-        # 同步主页开关状态，避免和实际模式不一致
-        try:
-            self.compact_switch_var_main.set(active)
-        except Exception:
-            pass
-        self.root.after(60, self._update_all_font_sizes)
-
-    def _focus_compact_entry(self):
-        """把焦点放到简洁模式的输入框。"""
-        try:
-            if getattr(self, "_compact_mode", False) and self.compact_frame.winfo_viewable():
-                self.compact_entry.focus_set()
-        except Exception:
-            pass
-
-    def _on_paned_configure(self, event):
-        if event.widget is not self.main_paned:
-            return
-        self._update_all_font_sizes()
-        self._sync_ai_minsize()
-
-    def _sync_ai_minsize(self):
-        """按窗口高度动态调整 AI 结果区的最小高度。
-
-        小窗口保证可读（不低于 100px），大窗口让AI 区占据更多空间，
-        避免固定高度把上限也钉死。
-        """
-        try:
-            h = self.main_paned.winfo_height()
-            if h < 400:
-                return
-            # 约 40% 窗口高度，下限 120，上限 420
-            target = max(120, min(int(h * 0.40), 420))
-            self.ai_frame.rowconfigure(0, minsize=target)
-        except Exception:
-            pass
-
-    def _init_sash_position(self):
-        """首次布局后设置 sash：题目区约 52%，AI 区约 48%。
-
-        tk.PanedWindow 没有 sashpos()，要用 sash_place(index, x, y)，y 是绝对坐标。
-        """
-        pw = self.main_paned
-        try:
-            total = pw.winfo_height()
-            if total < 400:
-                self.root.after(120, self._init_sash_position)
-                return
-            self._sync_ai_minsize()
-            # 下半区至少留 300（AI 结果 + 判定按钮 + 操作面板），上半区至少 320
-            pos = max(320, min(int(total * 0.52), total - 300))
-            pw.sash_place(0, 0, pos)
-            self._sash_ready = True
-        except Exception:
-            pass
+                pos_size = max(11, int(pos_size * min(1.0, avail_w * 0.96 / need_p)) - 1)
+            pos_size = min(pos_size, max(12, int(word_size * 0.62)))
+            apply()
+        apply()
 
     def setup_settings_tab(self, parent):
         parent.columnconfigure(0, weight=1)
@@ -1771,7 +1618,7 @@ class CSVLearningApp:
         self._register_font('ai_switch', 'Microsoft YaHei UI', 12)
 
         self.clean_paren_var = ctk.BooleanVar(value=self.ai_assistant.clean_parentheses)
-        self.paren_check = ctk.CTkSwitch(other_api_frame, text="自动忽略括号说明（推荐开启）\n例：苹果（复数） 等价于 苹果；防止括号内容干扰AI判定", variable=self.clean_paren_var, font=ctk.CTkFont(family='Microsoft YaHei UI', size=12))
+        self.paren_check = ctk.CTkSwitch(other_api_frame, text="自动忽略括号说明（推荐开启）\n例：苹果（复数） 等价于 苹果；防止括号内容干扰AI判定", variable=self.clean_paren_var, command=self._on_toggle_clean_paren, font=ctk.CTkFont(family='Microsoft YaHei UI', size=12))
         self.paren_check.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=6, padx=2)
         self._register_font('paren_check', 'Microsoft YaHei UI', 12)
 
@@ -1896,92 +1743,120 @@ class CSVLearningApp:
     def update_ai_status(self):
         providers = self.ai_assistant.get_available_providers()
         provider = self.ai_assistant.ai_provider
-        
+
         if not self.ai_assistant.use_ai:
-            self.ai_status_label.configure(text="AI: 已禁用", text_color="#95a5a6")
+            self._ai_status_text = "AI 已禁用"
         elif provider == 'ollama':
             if self.ai_assistant._check_ollama_http():
-                model_info = f" ({self.ai_assistant.model})" if self.ai_assistant.model else ""
-                self.ai_status_label.configure(text=f"🦙 Ollama{model_info}", text_color="#2ecc71")
+                self._ai_status_text = "Ollama 已就绪"
             else:
-                self.ai_status_label.configure(text="🦙 Ollama (未连接)", text_color="#f39c12")
+                self._ai_status_text = "Ollama 未连接"
         elif provider == 'local':
-            self.ai_status_label.configure(text="AI: 本地算法", text_color="#95a5a6")
+            self._ai_status_text = "本地算法"
         elif provider in providers:
             name = providers[provider].get('name', provider)
-            model_info = f" ({self.ai_assistant.model})" if self.ai_assistant.model else ""
-            self.ai_status_label.configure(text=f"AI: {name}{model_info}", text_color="#2ecc71")
+            self._ai_status_text = f"{name} 已就绪"
         else:
-            self.ai_status_label.configure(text="AI: 未知", text_color="#f39c12")
+            self._ai_status_text = "AI 状态未知"
+        self._refresh_status_line()
 
 
     def load_csv(self):
-        file_path = filedialog.askopenfilename(
+        file_paths = filedialog.askopenfilenames(
+            title="选择 CSV 文件（可多选，按住 Ctrl 或 Shift 选多个）",
             filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
         )
-        if file_path:
+        if not file_paths:
+            return
+
+        all_data = []
+        loaded_files = []
+        skipped = []
+
+        for fp in file_paths:
             try:
-                with open(file_path, 'r', encoding='utf-8') as f:
+                with open(fp, 'r', encoding='utf-8') as f:
                     reader = csv.reader(f)
-                    self.current_csv_data = list(reader)
-
-                if len(self.current_csv_data) == 0:
-                    messagebox.showerror("错误", "CSV 文件为空！")
-                    return
-
-                if len(self.current_csv_data[0]) < 3:
-                    messagebox.showerror("错误", "CSV 文件至少需要3列数据！")
-                    return
-
-                self.csv_file_path = file_path
-                self.file_label.configure(text=os.path.basename(file_path))
-                self.current_index = 0
-                self.wrong_answers = []
-                self.current_round = 1
-                self.correct_count = 0
-                self.wrong_count = 0
-                self.total_questions = len(self.current_csv_data)
-
-                self.update_progress()
-                self.update_ai_status()
-                self.display_current_question()
-                self.ai_result_text.delete(1.0, tk.END)
-                
-                self.ai_result_text.insert(tk.END, f"✅ 成功加载 {self.total_questions} 条记录\n")
-                self.ai_result_text.insert(tk.END, f"准备开始第 {self.current_round} 轮学习...\n\n")
-                
-                provider = self.ai_assistant.ai_provider
-                
-                if self.ai_assistant.use_ai:
-                    if provider == 'ollama':
-                        if self.ai_assistant._check_ollama_http():
-                            model_info = f" ({self.ai_assistant.model})" if self.ai_assistant.model else ""
-                            self.ai_result_text.insert(tk.END, f"🦙 使用Ollama本地AI{model_info}\n")
-                            self.ai_result_text.insert(tk.END, "   完全免费、隐私安全、无需联网\n")
-                        else:
-                            self.ai_result_text.insert(tk.END, "🦙 Ollama 未运行，正在尝试自动启动...\n")
-                            self._ensure_ollama_running_async(silent=False)
-                    elif provider != 'local':
-                        providers = self.ai_assistant.get_available_providers()
-                        provider_name = providers.get(provider, {}).get('name', 'AI')
-                        model_info = f" ({self.ai_assistant.model})" if self.ai_assistant.model else ""
-                        self.ai_result_text.insert(tk.END, f"🤖 使用{provider_name}{model_info}\n")
-                    else:
-                        self.ai_result_text.insert(tk.END, f"⚙️ 使用本地相似度算法\n")
-                else:
-                    self.ai_result_text.insert(tk.END, f"⚙️ AI功能已禁用，使用本地算法\n")
-
-                self.ai_result_text.insert(tk.END, "\n" + "="*75 + "\n\n")
-
+                    rows = [r for r in reader if any(cell.strip() for cell in r)]
+                if not rows:
+                    skipped.append(f"{os.path.basename(fp)}（空文件）")
+                    continue
+                if len(rows[0]) < 3:
+                    skipped.append(f"{os.path.basename(fp)}（不足3列）")
+                    continue
+                all_data.extend(rows)
+                loaded_files.append(fp)
             except Exception as e:
-                messagebox.showerror("错误", f"无法读取文件: {str(e)}")
+                skipped.append(f"{os.path.basename(fp)}（{e}）")
+
+        if not loaded_files:
+            messagebox.showerror("错误", "没有成功加载任何文件！\n\n" + "\n".join(skipped))
+            return
+
+        self.current_csv_data = all_data
+        self.csv_file_paths = loaded_files
+        self.csv_file_path = loaded_files[0] if len(loaded_files) == 1 else None
+
+        if len(loaded_files) == 1:
+            self.file_label.configure(text=os.path.basename(loaded_files[0]))
+        else:
+            self.file_label.configure(
+                text=f"{os.path.basename(loaded_files[0])} · 已合并 {len(loaded_files)} 个")
+
+        self.current_index = 0
+        self.wrong_answers = []
+        self.current_round = 1
+        self.correct_count = 0
+        self.wrong_count = 0
+        self.total_questions = len(self.current_csv_data)
+
+        self.update_progress()
+        self.update_ai_status()
+        self.display_current_question()
+        self.ai_result_text.delete(1.0, tk.END)
+
+        if len(loaded_files) == 1:
+            self.ai_result_text.insert(tk.END, f"✅ 成功加载 {self.total_questions} 条记录\n")
+        else:
+            self.ai_result_text.insert(tk.END, f"✅ 成功合并 {len(loaded_files)} 个文件，共 {self.total_questions} 条记录\n")
+            for fp in loaded_files:
+                self.ai_result_text.insert(tk.END, f"   📄 {os.path.basename(fp)}\n")
+        if skipped:
+            self.ai_result_text.insert(tk.END, f"\n⚠️ 跳过 {len(skipped)} 个文件:\n")
+            for s in skipped:
+                self.ai_result_text.insert(tk.END, f"   ⨯ {s}\n")
+        self.ai_result_text.insert(tk.END, f"\n准备开始第 {self.current_round} 轮学习...\n\n")
+
+        provider = self.ai_assistant.ai_provider
+
+        if self.ai_assistant.use_ai:
+            if provider == 'ollama':
+                if self.ai_assistant._check_ollama_http():
+                    model_info = f" ({self.ai_assistant.model})" if self.ai_assistant.model else ""
+                    self.ai_result_text.insert(tk.END, f"🦙 使用Ollama本地AI{model_info}\n")
+                    self.ai_result_text.insert(tk.END, "   完全免费、隐私安全、无需联网\n")
+                else:
+                    self.ai_result_text.insert(tk.END, "🦙 Ollama 未运行，正在尝试自动启动...\n")
+                    self._ensure_ollama_running_async(silent=False)
+            elif provider != 'local':
+                providers = self.ai_assistant.get_available_providers()
+                provider_name = providers.get(provider, {}).get('name', 'AI')
+                model_info = f" ({self.ai_assistant.model})" if self.ai_assistant.model else ""
+                self.ai_result_text.insert(tk.END, f"🤖 使用{provider_name}{model_info}\n")
+            else:
+                self.ai_result_text.insert(tk.END, f"⚙️ 使用本地相似度算法\n")
+        else:
+            self.ai_result_text.insert(tk.END, f"⚙️ AI功能已禁用，使用本地算法\n")
+
+        self.ai_result_text.insert(tk.END, "\n" + "="*75 + "\n\n")
 
     def save_progress(self):
         if not self.current_csv_data:
             messagebox.showwarning("提示", "请先加载 CSV 文件！")
             return
         try:
-            csv_basename = os.path.splitext(os.path.basename(self.csv_file_path))[0] if hasattr(self, 'csv_file_path') and self.csv_file_path else "未命名"
+            csv_basename = os.path.splitext(os.path.basename(self.csv_file_path))[0] if hasattr(self, 'csv_file_path') and self.csv_file_path else (
+                f"{len(self.csv_file_paths)}个文件合并" if getattr(self, 'csv_file_paths', None) else "未命名")
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             default_name = f"{timestamp}_{csv_basename}.txt"
             file_path = filedialog.asksaveasfilename(
@@ -1997,7 +1872,9 @@ class CSVLearningApp:
             progress_data = {
                 "save_time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "csv_file_path": self.csv_file_path if hasattr(self, 'csv_file_path') else "",
-                "csv_file_name": os.path.basename(self.csv_file_path) if hasattr(self, 'csv_file_path') else "",
+                "csv_file_paths": getattr(self, 'csv_file_paths', []) or [],
+                "csv_file_name": os.path.basename(self.csv_file_path) if hasattr(self, 'csv_file_path') and self.csv_file_path else (
+                    f"{len(getattr(self, 'csv_file_paths', []) or [])}个文件合并" if getattr(self, 'csv_file_paths', None) else ""),
                 "current_csv_data": self.current_csv_data,
                 "total_questions": self.total_questions,
                 "current_index": self.current_index,
@@ -2047,20 +1924,27 @@ class CSVLearningApp:
                 if not csv_path or not os.path.exists(csv_path):
                     alt = messagebox.askyesno(
                         "CSV 文件未找到",
-                        f"进度中的 CSV 文件不存在:\n{csv_path}\n\n是否手动选择新的 CSV 文件？\n（如果列顺序一致可继续使用）"
+                        f"进度中的 CSV 文件不存在:\n{csv_path}\n\n是否手动选择新的 CSV 文件？\n（可多选，列顺序一致即可继续使用）"
                     )
                     if alt:
-                        csv_path = filedialog.askopenfilename(
+                        re_paths = filedialog.askopenfilenames(
                             filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
                         )
-                        if not csv_path:
+                        if not re_paths:
                             return
+                        all_rows = []
+                        for rp in re_paths:
+                            with open(rp, 'r', encoding='utf-8') as f:
+                                all_rows.extend(r for r in csv.reader(f) if any(c.strip() for c in r))
+                        self.current_csv_data = all_rows
+                        csv_path = re_paths[0] if len(re_paths) == 1 else ""
+                        data["csv_file_paths"] = list(re_paths)
                     else:
                         return
-
-                with open(csv_path, 'r', encoding='utf-8') as f:
-                    reader = csv.reader(f)
-                    self.current_csv_data = list(reader)
+                else:
+                    with open(csv_path, 'r', encoding='utf-8') as f:
+                        reader = csv.reader(f)
+                        self.current_csv_data = list(reader)
 
                 if len(self.current_csv_data) == 0:
                     messagebox.showerror("错误", "CSV 文件为空！")
@@ -2075,8 +1959,16 @@ class CSVLearningApp:
                     csv_path = ""
 
             self.csv_file_path = csv_path
-            self.file_label.configure(text=os.path.basename(csv_path) if csv_path else "（无关联CSV）")
+            self.csv_file_paths = data.get("csv_file_paths", []) or ([] if not csv_path else [csv_path])
             self.total_questions = len(self.current_csv_data)
+            n_files = len(self.csv_file_paths)
+            if n_files > 1:
+                first_name = os.path.basename(self.csv_file_paths[0]) if self.csv_file_paths else ""
+                self.file_label.configure(text=f"{first_name} · 已合并 {n_files} 个")
+            elif csv_path:
+                self.file_label.configure(text=os.path.basename(csv_path))
+            else:
+                self.file_label.configure(text="（无关联CSV）")
             self.current_index = min(int(data.get("current_index", 0)), max(self.total_questions - 1, 0))
             self.current_round = int(data.get("current_round", 1))
             self.correct_count = int(data.get("correct_count", 0))
@@ -2095,10 +1987,16 @@ class CSVLearningApp:
             self.ai_result_text.delete(1.0, tk.END)
 
             save_time = data.get("save_time", "未知")
+            if n_files > 1:
+                csv_display = f"{n_files} 个文件合并"
+            elif csv_path:
+                csv_display = os.path.basename(csv_path)
+            else:
+                csv_display = "（无关联CSV）"
             info_text = (
                 f"✅ 学习进度已成功恢复！\n\n"
                 f"📅 进度保存时间: {save_time}\n"
-                f"📚 CSV 文件: {os.path.basename(csv_path)}\n"
+                f"📚 CSV 文件: {csv_display}\n"
                 f"📍 当前进度: 第 {self.current_index + 1} / {self.total_questions} 题\n"
                 f"🔁 当前轮次: 第 {self.current_round} 轮\n"
                 f"📈 正确: {self.correct_count} | 错误: {self.wrong_count}\n"
@@ -2119,14 +2017,11 @@ class CSVLearningApp:
             row = self.current_csv_data[self.current_index]
             self.col1_value.configure(text=row[0] if len(row) > 0 else "-")
             self.col2_value.configure(text=row[1] if len(row) > 1 else "-")
-            self.answer_entry.delete(0, tk.END)
-            # 简洁模式下不能聚焦 answer_entry：它被隐藏了，焦点留在那儿
-            # 会让回车走进空控件，弹「请输入答案」。
-            if getattr(self, "_compact_mode", False):
-                self._focus_compact_entry()
-            else:
-                self.answer_entry.focus_set()
+            self._answer_revealed = False
+            self._clear_entry(self.answer_entry)
+            self.answer_entry.focus_set()
             self.update_progress()
+            self._refresh_verdict()
             self._refit_question_fonts()
         else:
             self.finish_round()
@@ -2134,32 +2029,47 @@ class CSVLearningApp:
     def _refit_question_fonts(self):
         """题目文本变化后重算字号。布局尚未稳定时交给 <Configure> 兜底。"""
         self._question_size_cache.clear()
-        if getattr(self, "_compact_mode", False):
-            self._sync_compact_widgets()
-            return
-        q_wrap = getattr(self, "q_wrap", None)
-        if q_wrap is None or q_wrap.winfo_width() < 50:
+        card = getattr(self, "word_card", None)
+        if card is None or card.winfo_width() < 60:
             return
         self.root.after_idle(self._update_question_fonts)
 
     def update_progress(self):
-        self.round_label.configure(text=f"轮次: {self.current_round}")
-        self.progress_label.configure(text=f"进度: {self.current_index + 1}/{len(self.current_csv_data)}")
-        self.stats_label.configure(text=f"正确: {self.correct_count} | 错误: {self.wrong_count}")
+        self._refresh_status_line()
 
-    def submit_answer(self):
+    def _refresh_status_line(self):
+        """把轮次 / 进度 / 对错统计 / AI 状态合并成一行状态条。"""
+        total = len(self.current_csv_data)
+        current = min(self.current_index + 1, total) if total else 0
+        text = (f"第 {self.current_round} 轮 · {current}/{total} · "
+                f"对 {self.correct_count} 错 {self.wrong_count} · {self._ai_status_text}")
+        try:
+            self.status_label.configure(text=text)
+        except Exception:
+            pass
+
+    def submit_answer(self, user_answer=None):
+        """提交当前作答。
+
+        user_answer=None → 读输入框文本（老逻辑）。
+        传入文本 → 直接判定，不经过输入框。
+        返回 True=已发起判定；False=未提交（处理中/无题/空答案）。
+        """
         if self.processing:
-            return
+            return False
 
         if not self.current_csv_data or self.current_index >= len(self.current_csv_data):
-            return
+            return False
 
-        user_answer = self.answer_entry.get().strip()
+        if user_answer is None:
+            user_answer = self._entry_text(self.answer_entry).strip()
+        else:
+            user_answer = str(user_answer).strip()
         correct_answer = self.current_csv_data[self.current_index][2] if len(self.current_csv_data[self.current_index]) > 2 else ""
 
         if not user_answer:
             messagebox.showwarning("提示", "请输入答案！")
-            return
+            return False
 
         col1 = self.current_csv_data[self.current_index][0]
         col2 = self.current_csv_data[self.current_index][1]
@@ -2184,6 +2094,7 @@ class CSVLearningApp:
             thread.start()
         else:
             self.submit_local(user_answer, correct_answer, col1, col2)
+        return True
 
     def submit_with_ai(self, user_answer, correct_answer, col1, col2):
         try:
@@ -2331,21 +2242,19 @@ class CSVLearningApp:
             }
 
             self.update_progress()
-            # 简洁模式下不自动跳下一题：判定结果和答案需要停留给用户看，
-            # 否则刚刷新出来就被下一题覆盖。用户再次回车/点提交时手动前进。
-            if getattr(self, "_compact_mode", False):
-                self._refresh_compact_verdict()
-                try:
-                    self.compact_entry.focus_set()
-                except Exception:
-                    pass
-            else:
-                self.next_question()
+            # 判定结果和正确答案需要停留给用户看，否则刚刷新出来就被下一题覆盖。
+            # 用户再次回车/点提交时手动前进。
+            self._refresh_verdict()
+            try:
+                self.answer_entry.focus_set()
+            except Exception:
+                pass
 
         finally:
             self.processing = False
 
     def show_answer(self):
+        """查看答案：把正确答案写进 AI 详情区。"""
         if self.current_csv_data and self.current_index < len(self.current_csv_data):
             correct_answer = self.current_csv_data[self.current_index][2] if len(self.current_csv_data[self.current_index]) > 2 else ""
             clean_display = clean_answer_string(correct_answer, self.ai_assistant)
@@ -2393,6 +2302,7 @@ class CSVLearningApp:
         self.ai_result_text.insert(tk.END, result_text)
         self.ai_result_text.see(tk.END)
         self.update_progress()
+        self._refresh_verdict()
 
     def mark_as_wrong(self):
         if not hasattr(self, 'last_judgment_info') or self.last_judgment_info is None:
@@ -2427,6 +2337,7 @@ class CSVLearningApp:
         self.ai_result_text.insert(tk.END, result_text)
         self.ai_result_text.see(tk.END)
         self.update_progress()
+        self._refresh_verdict()
 
     def next_question(self):
         self.current_index += 1
@@ -2460,7 +2371,8 @@ class CSVLearningApp:
 
         self.col1_value.configure(text="🎊 本轮完成!")
         self.col2_value.configure(text="")
-        self.answer_entry.delete(0, tk.END)
+        self._clear_entry(self.answer_entry)
+        self._refresh_verdict()
         self._refit_question_fonts()
 
     def start_new_round(self):
@@ -2524,6 +2436,8 @@ class CSVLearningApp:
         if self.csv_file_path:
             csv_name = os.path.splitext(os.path.basename(self.csv_file_path))[0]
             csv_name = "".join([c for c in csv_name if c.isalnum() or c in ('_', '-')]) or "未命名CSV"
+        elif getattr(self, 'csv_file_paths', None):
+            csv_name = f"{len(self.csv_file_paths)}files_merged"
         default_filename = f"ai_judge_log_{csv_name}_r{self.current_round}_{timestamp}.txt"
 
         save_path = filedialog.asksaveasfilename(
@@ -2539,7 +2453,7 @@ class CSVLearningApp:
                 header.append("📚 CSV词汇学习工具 - AI判定日志导出")
                 header.append("=" * 72)
                 header.append(f"🕒 导出时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-                header.append(f"📂 CSV文件: {self.csv_file_path or '（未加载）'}")
+                header.append(f"📂 CSV文件: {self.csv_file_path or (f'{len(self.csv_file_paths)}个文件合并' if getattr(self, 'csv_file_paths', None) else '（未加载）')}")
                 header.append(f"🔁 当前轮次: {self.current_round}")
                 header.append(f"📊 当前进度: 第 {self.current_index + (1 if self.current_index > 0 else 0)} / {self.total_questions} 题")
                 header.append(f"✅ 正确数: {self.correct_count}    ❌ 错误数: {self.wrong_count}")
@@ -2578,14 +2492,17 @@ class CSVLearningApp:
         self.correct_count = 0
         self.wrong_count = 0
         self.csv_file_path = None
+        self.csv_file_paths = []
 
         self.file_label.configure(text="未选择文件")
         self.col1_value.configure(text="-")
         self.col2_value.configure(text="-")
-        self.answer_entry.delete(0, tk.END)
+        self._clear_entry(self.answer_entry)
+        self.last_judgment_info = None
         self.ai_result_text.delete(1.0, tk.END)
         self.update_progress()
         self.update_ai_status()
+        self._refresh_verdict()
         self._refit_question_fonts()
 
 
