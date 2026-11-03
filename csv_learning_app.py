@@ -604,73 +604,123 @@ class OllamaAILearningAssistant:
             raise Exception(f"百度API调用失败: {str(e)}")
 
 
-class _FlatTabView(ctk.CTkFrame):
-    """无边框的 tab 容器。
+class _SimpleTip:
+    """极简悬停提示：鼠标移入显示小标签，移出隐藏。
 
-    CTkTabview 内部用带圆角的 canvas 绘制内容区，在 dark 主题下会在容器四周
-    留下一圈1px 浅色渲染缝。这里改用 CTkFrame + CTkSegmentedButton 自己拼，
-    所有控件都是纯色填充，边缘不会有缝。
+    注意：CTkButton 把 <Enter>/<Leave> 绑在内部的 _canvas 上（不是外层 frame），
+    所以要绑到 canvas 才收得到事件。
+    """
+
+    def __init__(self, widget, text, delay=350):
+        self.widget = widget
+        self.text = text
+        self.delay = delay
+        self._after_id = None
+        self._tip_win = None
+        self._targets = []
+        try:
+            canvas = getattr(widget, "_canvas", None)
+            if canvas is not None:
+                self._targets = [canvas]
+                lbl = getattr(widget, "_text_label", None)
+                if lbl is not None:
+                    self._targets.append(lbl)
+            else:
+                self._targets = [widget]
+            for t in self._targets:
+                t.bind("<Enter>", self._schedule, add="+")
+                t.bind("<Leave>", self._hide, add="+")
+                t.bind("<ButtonPress>", self._hide, add="+")
+        except Exception:
+            pass
+
+    def _schedule(self, event=None):
+        self._cancel()
+        self._after_id = self.widget.after(self.delay, self._show)
+
+    def _cancel(self):
+        if self._after_id is not None:
+            try:
+                self.widget.after_cancel(self._after_id)
+            except Exception:
+                pass
+            self._after_id = None
+
+    def _show(self):
+        self._after_id = None
+        if self._tip_win is not None:
+            return
+        try:
+            x = self.widget.winfo_rootx() + self.widget.winfo_width() // 2
+            y = self.widget.winfo_rooty() + self.widget.winfo_height() + 6
+            self._tip_win = tk.Toplevel(self.widget)
+            self._tip_win.wm_overrideredirect(True)
+            self._tip_win.wm_geometry(f"+{x}+{y}")
+            lbl = tk.Label(self._tip_win, text=self.text, bg="#2b313b",
+                           fg="#cfd6df", padx=6, pady=3,
+                           font=("Microsoft YaHei UI", 9))
+            lbl.pack()
+            self._tip_win.after(2500, self._hide)
+        except Exception:
+            self._tip_win = None
+
+    def _hide(self, event=None):
+        self._cancel()
+        if self._tip_win is not None:
+            try:
+                self._tip_win.destroy()
+            except Exception:
+                pass
+            self._tip_win = None
+
+
+class _PageStack(ctk.CTkFrame):
+    """无标签栏的多页面容器。
+
+    早期版本用 CTkSegmentedButton 做「学习模式 / AI设置」标签栏，但顶栏已经有
+    「AI」胶囊、设置页也有「← 学习」返回，标签栏纯属重复且占用纵向空间。
+    这里只保留切换逻辑，标签栏彻底去掉。
     """
 
     def __init__(self, master):
-        super().__init__(master, fg_color="#2b2b2b", corner_radius=0)
+        super().__init__(master, fg_color="#21252b", corner_radius=0)
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(1, weight=1)
+        self.grid_rowconfigure(0, weight=1)
 
-        self._tab_dict = {}
+        self._page_dict = {}
         self._name_list = []
         self._current_name = ""
 
-        self._bar = ctk.CTkSegmentedButton(
-            self,
-            values=[],
-            height=30,
-            corner_radius=0,
-            border_width=0,
-            fg_color="#2b2b2b",
-            selected_color="#3B8ED0",
-            selected_hover_color="#36719F",
-            unselected_color="#2b2b2b",
-            unselected_hover_color="#3a3a3a",
-            text_color="#DCE4EE",
-            font=ctk.CTkFont(family="Microsoft YaHei UI", size=12),
-            command=self._on_select,
-        )
-        self._bar.grid(row=0, column=0, padx=0, pady=(4, 4))
-
     def add(self, name):
-        frame = ctk.CTkFrame(self, fg_color="#2b2b2b", corner_radius=0)
-        self._tab_dict[name] = frame
+        frame = ctk.CTkFrame(self, fg_color="#21252b", corner_radius=0)
+        self._page_dict[name] = frame
         self._name_list.append(name)
-        self._bar.configure(values=list(self._name_list))
 
         if not self._current_name:
             self._current_name = name
-            self._bar.set(name)
-            frame.grid(row=1, column=0, sticky="nsew")
+            frame.grid(row=0, column=0, sticky="nsew")
         return frame
 
-    def _on_select(self, name):
-        if name == self._current_name:
+    def select(self, name):
+        """切换到指定页面。"""
+        if name not in self._page_dict or name == self._current_name:
             return
-        self._tab_dict[self._current_name].grid_forget()
+        self._page_dict[self._current_name].grid_forget()
         self._current_name = name
-        self._tab_dict[name].grid(row=1, column=0, sticky="nsew")
+        self._page_dict[name].grid(row=0, column=0, sticky="nsew")
+
+    @property
+    def current(self):
+        return self._current_name
 
     def tab(self, name):
-        return self._tab_dict[name]
-
-    def select(self, name):
-        """切换到指定标签页（供顶栏「AI」胶囊调用）。"""
-        if name in self._tab_dict:
-            self._bar.set(name)
-            self._on_select(name)
+        return self._page_dict[name]
 
 
 class CSVLearningApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("📚 词汇学习默写工具 - 🦙 Ollama AI版")
+        self.root.title("📚 词汇学习默写工具")
         self.geometry("900x760")
         # 下限：单列布局，窄到 560 也能正常默写
         self.root.minsize(560, 520)
@@ -926,15 +976,15 @@ class CSVLearningApp:
         main_frame.columnconfigure(0, weight=1)
         main_frame.rowconfigure(0, weight=1)
 
-        notebook = _FlatTabView(main_frame)
-        notebook.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
-        self.notebook = notebook
+        pages = _PageStack(main_frame)
+        pages.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        self.pages = pages
 
-        learning_tab = notebook.add("📚 学习模式")
-        settings_tab = notebook.add("🤖 AI设置 (Ollama)")
+        learning_page = pages.add("学习")
+        settings_page = pages.add("AI设置")
 
-        self.setup_learning_tab(learning_tab)
-        self.setup_settings_tab(settings_tab)
+        self.setup_learning_tab(learning_page)
+        self.setup_settings_tab(settings_page)
         self._sync_paren_ui_from_config()
         self.update_ai_status()
 
@@ -968,12 +1018,15 @@ class CSVLearningApp:
 
         self.btn_file = self._pill(bar, "文件", self.load_csv, width=48)
         self.btn_file.grid(row=0, column=1, padx=(0, 6))
+        self._bind_hint(self.btn_file, "加载 CSV 词汇表")
 
-        self.btn_ai = self._pill(bar, "AI", self._goto_ai_settings, width=40)
+        self.btn_ai = self._pill(bar, "AI", self._goto_ai_settings, width=44)
         self.btn_ai.grid(row=0, column=2, padx=(0, 6))
+        self._bind_hint(self.btn_ai, "打开 AI 设置页")
 
         self.btn_more = self._pill(bar, "⋯", self._toggle_more_menu, width=34)
         self.btn_more.grid(row=0, column=3)
+        self._bind_hint(self.btn_more, "更多操作")
 
         self._register_font('file_label', 'Microsoft YaHei UI', 12)
         self._register_font('btn_file', 'Microsoft YaHei UI', 12)
@@ -1159,10 +1212,19 @@ class CSVLearningApp:
         btn._pill_base = (width, 26)
         return btn
 
+    @staticmethod
+    def _bind_hint(widget, text):
+        """给控件挂一个悬停提示（自绘，tkinter 没有现成 ToolTip）。"""
+        try:
+            # 必须存引用，否则临时对象被回收，绑定随之失效
+            widget._tip = _SimpleTip(widget, text)
+        except Exception:
+            pass
+
     def _goto_ai_settings(self):
         """顶栏「AI」胶囊：跳到 AI 设置页。"""
         try:
-            self.notebook.select("🤖 AI设置 (Ollama)")
+            self.pages.select("AI设置")
         except Exception:
             pass
 
@@ -1548,6 +1610,7 @@ class CSVLearningApp:
 
         self.btn_back = self._pill(bar, "← 学习", self._goto_learning, width=58)
         self.btn_back.grid(row=0, column=1)
+        self._bind_hint(self.btn_back, "返回学习页")
         self._register_font('btn_back', 'Microsoft YaHei UI', 12)
 
         # ---- 可滚动内容区 ----
@@ -1742,7 +1805,7 @@ class CSVLearningApp:
     def _goto_learning(self):
         """从设置页回到学习页。"""
         try:
-            self.notebook.select("📚 学习模式")
+            self.pages.select("学习")
         except Exception:
             pass
 
