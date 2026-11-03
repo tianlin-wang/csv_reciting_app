@@ -604,21 +604,6 @@ class OllamaAILearningAssistant:
             raise Exception(f"百度API调用失败: {str(e)}")
 
 
-def ctk_group(parent, title, padding=15):
-    frame = ctk.CTkFrame(parent)
-    frame.grid_propagate(True)
-    lbl = ctk.CTkLabel(
-        frame,
-        text=title,
-        font=ctk.CTkFont(family='Microsoft YaHei UI', size=13, weight='bold'),
-        anchor="w"
-    )
-    lbl.pack(fill="x", padx=padding, pady=(padding, 5))
-    inner = ctk.CTkFrame(frame, fg_color="transparent")
-    inner.pack(fill="both", expand=True, padx=padding, pady=(0, padding))
-    return frame, inner, lbl
-
-
 class _FlatTabView(ctk.CTkFrame):
     """无边框的 tab 容器。
 
@@ -1537,94 +1522,230 @@ class CSVLearningApp:
         apply()
 
     def setup_settings_tab(self, parent):
-        parent.columnconfigure(0, weight=1)
+        """构建 AI 设置页（与学习页同一套视觉语言）。
 
-        p_wrap, provider_frame, p_title = ctk_group(parent, "🌐 选择AI服务商", padding=15)
-        p_wrap.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=8, padx=8)
-        provider_frame.columnconfigure(1, weight=1)
-        self._register_font('p_title', 'Microsoft YaHei UI', 13, weight='bold')
+        卡片式分区：AI 服务商 / Ollama 配置 / 其他 API 密钥，
+        控件沿用设计稿的胶囊按钮、深底输入框与灰蓝次级文字。
+        """
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(0, weight=1)
+
+        wrap = ctk.CTkFrame(parent, fg_color="#21252b", corner_radius=12,
+                             border_width=1, border_color="#33383f")
+        wrap.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=8, pady=5)
+        wrap.columnconfigure(0, weight=1)
+        wrap.rowconfigure(1, weight=1)
+
+        # ---- 顶部工具条：标题 + 返回学习 ----
+        bar = ctk.CTkFrame(wrap, fg_color="transparent")
+        bar.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=14, pady=(10, 0))
+        bar.columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            bar, text="AI 设置", anchor="w",
+            font=ctk.CTkFont(family='Microsoft YaHei UI', size=14, weight='bold'),
+            text_color="#f0f3f7").grid(row=0, column=0, sticky=tk.W)
+
+        self.btn_back = self._pill(bar, "← 学习", self._goto_learning, width=58)
+        self.btn_back.grid(row=0, column=1)
+        self._register_font('btn_back', 'Microsoft YaHei UI', 12)
+
+        # ---- 可滚动内容区 ----
+        scroll = ctk.CTkScrollableFrame(
+            wrap, fg_color="transparent", corner_radius=0, border_width=0,
+            scrollbar_button_color="#3b424f", scrollbar_button_hover_color="#4a5260")
+        scroll.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=14, pady=(8, 12))
+        scroll.columnconfigure(0, weight=1)
 
         providers = self.ai_assistant.get_available_providers()
 
-        self.lbl_ai_provider = ctk.CTkLabel(provider_frame, text="AI提供商:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=13, weight='bold'))
-        self.lbl_ai_provider.grid(row=0, column=0, sticky=tk.W, pady=6)
-        self._register_font('lbl_ai_provider', 'Microsoft YaHei UI', 13, weight='bold')
-        
-        self.provider_combo = ctk.CTkComboBox(provider_frame, values=list(providers.keys()), width=420, state='readonly', font=ctk.CTkFont(family='Microsoft YaHei UI', size=12))
-        self.provider_combo.grid(row=0, column=1, padx=10, pady=6, sticky=(tk.W, tk.E))
+        # ========== 卡片 1：AI 服务商 ==========
+        card1 = self._settings_card(scroll, "AI 服务商", "选择用于判定对错的 AI 引擎", row=0)
+
+        self.lbl_ai_provider = ctk.CTkLabel(
+            card1, text="提供商", anchor="w",
+            font=ctk.CTkFont(family='Microsoft YaHei UI', size=13),
+            text_color="#f0f3f7")
+        self.lbl_ai_provider.grid(row=0, column=0, sticky=tk.W, padx=(14, 10), pady=(12, 6))
+        self._register_font('lbl_ai_provider', 'Microsoft YaHei UI', 13)
+
+        self.provider_combo = ctk.CTkComboBox(
+            card1, values=list(providers.keys()), height=40, corner_radius=10,
+            state='readonly', font=ctk.CTkFont(family='Microsoft YaHei UI', size=13),
+            fg_color="#1b1f25", border_color="#39404f", button_color="#2f3540",
+            button_hover_color="#3b424f", dropdown_fg_color="#2b313b",
+            dropdown_hover_color="#3b424f", dropdown_text_color="#f0f3f7",
+            text_color="#f0f3f7")
+        self.provider_combo.grid(row=0, column=1, sticky=(tk.W, tk.E),
+                                 padx=(0, 14), pady=(12, 6))
         self.provider_combo.set(self.ai_assistant.ai_provider)
         self.provider_combo.configure(command=self.on_provider_change)
-        self._register_font('provider_combo', 'Microsoft YaHei UI', 12)
+        self._register_font('provider_combo', 'Microsoft YaHei UI', 13)
 
-        self.provider_desc = ctk.CTkLabel(provider_frame, text="", font=ctk.CTkFont(family='Microsoft YaHei UI', size=11), text_color="#3498db", anchor="w", justify="left")
-        self.provider_desc.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=4)
+        self.provider_desc = ctk.CTkLabel(
+            card1, text="", anchor="w", justify="left",
+            font=ctk.CTkFont(family='Microsoft YaHei UI', size=12), text_color="#8b95a3")
+        self.provider_desc.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E),
+                                padx=14, pady=(0, 12))
         self.update_provider_description()
-        self._register_font('provider_desc', 'Microsoft YaHei UI', 11)
+        self._register_font('provider_desc', 'Microsoft YaHei UI', 12)
 
-        o_wrap, ollama_frame, o_title = ctk_group(parent, "🦙 Ollama 配置 (推荐)", padding=15)
-        o_wrap.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=8, padx=8)
-        ollama_frame.columnconfigure(1, weight=1)
-        self._register_font('o_title', 'Microsoft YaHei UI', 13, weight='bold')
+        # ========== 卡片 2：Ollama 配置 ==========
+        card2 = self._settings_card(scroll, "Ollama 配置", "本地运行，免费无限使用，推荐", row=1)
 
-        self.lbl_ollama_url = ctk.CTkLabel(ollama_frame, text="Ollama服务地址:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=12))
-        self.lbl_ollama_url.grid(row=0, column=0, sticky=tk.W, pady=6)
-        self._register_font('lbl_ollama_url', 'Microsoft YaHei UI', 12)
+        self.lbl_ollama_url = ctk.CTkLabel(
+            card2, text="服务地址", anchor="w",
+            font=ctk.CTkFont(family='Microsoft YaHei UI', size=13), text_color="#f0f3f7")
+        self.lbl_ollama_url.grid(row=0, column=0, sticky=tk.W, padx=(14, 10), pady=(12, 6))
+        self._register_font('lbl_ollama_url', 'Microsoft YaHei UI', 13)
 
-        self.ollama_url_entry = ctk.CTkEntry(ollama_frame, width=420, height=36, font=ctk.CTkFont(family='Microsoft YaHei UI', size=12))
-        self.ollama_url_entry.grid(row=0, column=1, padx=10, pady=6, sticky=(tk.W, tk.E))
+        self.ollama_url_entry = ctk.CTkEntry(
+            card2, height=40, corner_radius=10,
+            font=ctk.CTkFont(family='Microsoft YaHei UI', size=13),
+            fg_color="#1b1f25", border_color="#39404f", border_width=1,
+            text_color="#f0f3f7")
+        self.ollama_url_entry.grid(row=0, column=1, sticky=(tk.W, tk.E),
+                                   padx=(0, 8), pady=(12, 6))
         self.ollama_url_entry.insert(0, self.ai_assistant.ollama_base_url)
-        self._register_font('ollama_url_entry', 'Microsoft YaHei UI', 12)
+        self._register_font('ollama_url_entry', 'Microsoft YaHei UI', 13)
 
-        self.btn_check_ollama = ctk.CTkButton(ollama_frame, text="检测连接", command=self.check_ollama_connection, width=110, font=ctk.CTkFont(family='Microsoft YaHei UI', size=12), fg_color="#16a085", hover_color="#138d75")
-        self.btn_check_ollama.grid(row=0, column=2, padx=5)
+        self.btn_check_ollama = self._pill(card2, "检测连接", self.check_ollama_connection,
+                                           width=72, fg_color="#2f3540")
+        self.btn_check_ollama.grid(row=0, column=2, padx=(0, 14), pady=(12, 6))
         self._register_font('btn_check_ollama', 'Microsoft YaHei UI', 12)
-        
-        self.ollama_status_label = ctk.CTkLabel(ollama_frame, text="状态: 未检测", font=ctk.CTkFont(family='Microsoft YaHei UI', size=11), anchor="w")
-        self.ollama_status_label.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=3)
-        self._register_font('ollama_status_label', 'Microsoft YaHei UI', 11)
 
-        self.lbl_model = ctk.CTkLabel(ollama_frame, text="选择模型:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=12))
-        self.lbl_model.grid(row=2, column=0, sticky=tk.W, pady=6)
-        self._register_font('lbl_model', 'Microsoft YaHei UI', 12)
-        
-        self.model_combo = ctk.CTkComboBox(ollama_frame, values=[], width=420, height=36, font=ctk.CTkFont(family='Microsoft YaHei UI', size=12))
-        self.model_combo.grid(row=2, column=1, columnspan=2, padx=10, pady=6, sticky=(tk.W, tk.E))
-        self._register_font('model_combo', 'Microsoft YaHei UI', 12)
-        
-        self.btn_refresh_models = ctk.CTkButton(ollama_frame, text="刷新模型列表", command=self.refresh_ollama_models, font=ctk.CTkFont(family='Microsoft YaHei UI', size=12), fg_color="#2980b9", hover_color="#2471a3")
-        self.btn_refresh_models.grid(row=3, column=0, columnspan=3, pady=8)
+        self.ollama_status_label = ctk.CTkLabel(
+            card2, text="未检测", anchor="w",
+            font=ctk.CTkFont(family='Microsoft YaHei UI', size=12), text_color="#7f8896")
+        self.ollama_status_label.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E),
+                                      padx=14, pady=(0, 6))
+        self._register_font('ollama_status_label', 'Microsoft YaHei UI', 12)
+
+        self.lbl_model = ctk.CTkLabel(
+            card2, text="模型", anchor="w",
+            font=ctk.CTkFont(family='Microsoft YaHei UI', size=13), text_color="#f0f3f7")
+        self.lbl_model.grid(row=2, column=0, sticky=tk.W, padx=(14, 10), pady=(6, 12))
+        self._register_font('lbl_model', 'Microsoft YaHei UI', 13)
+
+        self.model_combo = ctk.CTkComboBox(
+            card2, values=[], height=40, corner_radius=10,
+            font=ctk.CTkFont(family='Microsoft YaHei UI', size=13),
+            fg_color="#1b1f25", border_color="#39404f", button_color="#2f3540",
+            button_hover_color="#3b424f", dropdown_fg_color="#2b313b",
+            dropdown_hover_color="#3b424f", dropdown_text_color="#f0f3f7",
+            text_color="#f0f3f7")
+        self.model_combo.grid(row=2, column=1, sticky=(tk.W, tk.E), padx=(0, 8), pady=(6, 12))
+        self._register_font('model_combo', 'Microsoft YaHei UI', 13)
+
+        self.btn_refresh_models = self._pill(card2, "刷新列表", self.refresh_ollama_models,
+                                              width=72, fg_color="#2f3540")
+        self.btn_refresh_models.grid(row=2, column=2, padx=(0, 14), pady=(6, 12))
         self._register_font('btn_refresh_models', 'Microsoft YaHei UI', 12)
 
         self.update_model_list()
 
-        api_wrap, other_api_frame, api_title = ctk_group(parent, "🔑 其他AI API密钥 (可选)", padding=15)
-        api_wrap.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=8, padx=8)
-        other_api_frame.columnconfigure(1, weight=1)
-        self._register_font('api_title', 'Microsoft YaHei UI', 13, weight='bold')
+        # ========== 卡片 3：其他 API 密钥 ==========
+        card3 = self._settings_card(scroll, "其他 AI API 密钥", "使用云端模型时才需要填写", row=2)
 
-        self.lbl_api_key = ctk.CTkLabel(other_api_frame, text="API Key:", font=ctk.CTkFont(family='Microsoft YaHei UI', size=12))
-        self.lbl_api_key.grid(row=0, column=0, sticky=tk.W, pady=6)
-        self._register_font('lbl_api_key', 'Microsoft YaHei UI', 12)
+        self.lbl_api_key = ctk.CTkLabel(
+            card3, text="API Key", anchor="w",
+            font=ctk.CTkFont(family='Microsoft YaHei UI', size=13), text_color="#f0f3f7")
+        self.lbl_api_key.grid(row=0, column=0, sticky=tk.W, padx=(14, 10), pady=(12, 6))
+        self._register_font('lbl_api_key', 'Microsoft YaHei UI', 13)
 
-        self.api_key_entry = ctk.CTkEntry(other_api_frame, width=420, height=36, show="•", font=ctk.CTkFont(family='Microsoft YaHei UI', size=12))
-        self.api_key_entry.grid(row=0, column=1, padx=10, pady=6, sticky=(tk.W, tk.E))
+        self.api_key_entry = ctk.CTkEntry(
+            card3, height=40, corner_radius=10, show="•",
+            font=ctk.CTkFont(family='Microsoft YaHei UI', size=13),
+            fg_color="#1b1f25", border_color="#39404f", border_width=1,
+            text_color="#f0f3f7")
+        self.api_key_entry.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(0, 14), pady=(12, 6))
         if self.ai_assistant.api_key:
             self.api_key_entry.insert(0, self.ai_assistant.api_key)
-        self._register_font('api_key_entry', 'Microsoft YaHei UI', 12)
+        self._register_font('api_key_entry', 'Microsoft YaHei UI', 13)
 
         self.use_ai_var = ctk.BooleanVar(value=self.ai_assistant.use_ai)
-        self.ai_switch = ctk.CTkSwitch(other_api_frame, text="启用AI智能判定", variable=self.use_ai_var, font=ctk.CTkFont(family='Microsoft YaHei UI', size=12))
-        self.ai_switch.grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=(12, 6), padx=2)
-        self._register_font('ai_switch', 'Microsoft YaHei UI', 12)
+        self.ai_switch = ctk.CTkSwitch(
+            card3, text="启用 AI 智能判定", variable=self.use_ai_var,
+            font=ctk.CTkFont(family='Microsoft YaHei UI', size=13),
+            text_color="#f0f3f7", progress_color="#27ae60",
+            button_color="#4ade80", button_hover_color="#6ee7a0")
+        self.ai_switch.grid(row=1, column=0, columnspan=3, sticky=tk.W,
+                            padx=14, pady=(6, 2))
+        self._register_font('ai_switch', 'Microsoft YaHei UI', 13)
 
         self.clean_paren_var = ctk.BooleanVar(value=self.ai_assistant.clean_parentheses)
-        self.paren_check = ctk.CTkSwitch(other_api_frame, text="自动忽略括号说明（推荐开启）\n例：苹果（复数） 等价于 苹果；防止括号内容干扰AI判定", variable=self.clean_paren_var, command=self._on_toggle_clean_paren, font=ctk.CTkFont(family='Microsoft YaHei UI', size=12))
-        self.paren_check.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=6, padx=2)
-        self._register_font('paren_check', 'Microsoft YaHei UI', 12)
+        self.paren_check = ctk.CTkSwitch(
+            card3, text="自动忽略括号说明（推荐开启）\n例：苹果（复数） 等价于 苹果；防止括号内容干扰 AI 判定",
+            variable=self.clean_paren_var, command=self._on_toggle_clean_paren,
+            font=ctk.CTkFont(family='Microsoft YaHei UI', size=13),
+            text_color="#f0f3f7", progress_color="#27ae60",
+            button_color="#4ade80", button_hover_color="#6ee7a0")
+        self.paren_check.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E),
+                              padx=14, pady=(6, 12))
+        self._register_font('paren_check', 'Microsoft YaHei UI', 13)
 
-        self.btn_save_settings = ctk.CTkButton(other_api_frame, text="💾 保存所有设置", command=self.save_ai_settings, height=40, font=ctk.CTkFont(family='Microsoft YaHei UI', size=13, weight='bold'), fg_color="#27ae60", hover_color="#219a52")
-        self.btn_save_settings.grid(row=3, column=0, columnspan=2, pady=15)
-        self._register_font('btn_save_settings', 'Microsoft YaHei UI', 13, weight='bold')
+        # ---- 底部保存条 ----
+        footer = ctk.CTkFrame(wrap, fg_color="transparent")
+        footer.grid(row=2, column=0, sticky=(tk.W, tk.E), padx=14, pady=(0, 12))
+        footer.columnconfigure(0, weight=1)
+
+        self.save_hint = ctk.CTkLabel(
+            footer, text="修改后需保存才会生效", anchor="w",
+            font=ctk.CTkFont(family='Microsoft YaHei UI', size=12), text_color="#7f8896")
+        self.save_hint.grid(row=0, column=0, sticky=tk.W)
+        self._register_font('save_hint', 'Microsoft YaHei UI', 12)
+
+        self.btn_save_settings = ctk.CTkButton(
+            footer, text="保存所有设置", command=self.save_ai_settings,
+            width=132, height=40, corner_radius=10,
+            font=ctk.CTkFont(family='Microsoft YaHei UI', size=14),
+            fg_color="#27ae60", hover_color="#219a52", text_color="#ffffff")
+        self.btn_save_settings.grid(row=0, column=1, sticky=tk.E)
+        self._register_font('btn_save_settings', 'Microsoft YaHei UI', 14)
+
+    # ==========================================================
+    # 设置页辅助
+    # ==========================================================
+
+    @staticmethod
+    def _settings_card(parent, title, subtitle="", row=0):
+        """设置页的分区卡片：标题 + 副标题，返回内容区。
+
+        row 为卡片在父容器中的行号（父容器需已配置 column 0 权重）。
+        """
+        card = ctk.CTkFrame(parent, fg_color="#2b313b", corner_radius=12)
+        card.grid(row=row, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        card.columnconfigure(0, weight=1)
+
+        head = ctk.CTkFrame(card, fg_color="transparent")
+        head.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=14, pady=(12, 0))
+        head.columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            head, text=title, anchor="w",
+            font=ctk.CTkFont(family='Microsoft YaHei UI', size=14, weight='bold'),
+            text_color="#f0f3f7").grid(row=0, column=0, sticky=tk.W)
+
+        if subtitle:
+            ctk.CTkLabel(
+                head, text=subtitle, anchor="e",
+                font=ctk.CTkFont(family='Microsoft YaHei UI', size=12),
+                text_color="#7f8896").grid(row=0, column=1, sticky=tk.E)
+
+        body = ctk.CTkFrame(card, fg_color="transparent")
+        body.grid(row=1, column=0, sticky=(tk.W, tk.E))
+        # 列 0 = 标签（固定宽），列 1 = 控件（吃掉剩余空间），列 2 = 尾部按钮
+        body.columnconfigure(0, minsize=76)
+        body.columnconfigure(1, weight=1)
+        return body
+
+    def _goto_learning(self):
+        """从设置页回到学习页。"""
+        try:
+            self.notebook.select("📚 学习模式")
+        except Exception:
+            pass
+
 
 
 
@@ -1638,7 +1759,7 @@ class CSVLearningApp:
         if provider in providers:
             desc = providers[provider].get('desc', '')
             name = providers[provider].get('name', provider)
-            self.provider_desc.configure(text=f"📍 {name} - {desc}")
+            self.provider_desc.configure(text=f"{name} · {desc}")
 
     def update_model_list(self):
         providers = self.ai_assistant.get_available_providers()
