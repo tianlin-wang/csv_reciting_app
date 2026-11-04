@@ -742,6 +742,7 @@ class CSVLearningApp:
         self._base_w = 1100
         self._base_h = 900
         self._question_size_cache = {}
+        self._entry_typing = False
 
         self.setup_ui()
         self._last_resize_size = (0, 0)
@@ -1123,17 +1124,23 @@ class CSVLearningApp:
         entry_card.grid(row=5, column=0, sticky=(tk.W, tk.E), padx=14, pady=(12, 0))
         entry_card.columnconfigure(0, weight=1)
 
+        # 内容变化用 StringVar 的 trace 监听：
+        # Tk 8.6 的 Entry 没有 <<Modified>> 事件（该事件属于 Text 控件），
+        # 绑在 Entry 上永远不会触发，提示层就永远压着用户输入的文字。
+        self.answer_var = tk.StringVar(value="")
         self.answer_entry = ctk.CTkEntry(
             entry_card, height=40, corner_radius=10,
             font=ctk.CTkFont(family='Microsoft YaHei UI', size=15),
             fg_color="#1b1f25", border_color="#39404f", border_width=1,
-            text_color="#f0f3f7")
+            text_color="#f0f3f7",
+            textvariable=self.answer_var)
         self.answer_entry.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=(0, 8))
         self.answer_entry.bind('<Return>', self._submit_current)
         self.answer_entry.bind('<Key>', lambda e: self._entry_key_down(self.answer_entry, e))
 
-        # CTk 6.0 的占位符在获得焦点时会被删掉、且和内部 Entry 状态不同步，
-        # 这里改成自绘提示层：输入框为空时显示，点击提示也能聚焦输入框。
+        # CTk 6.0 的占位符在获得焦点时会被删掉，且标志
+        # (_placeholder_text_active) 与内部 Entry 状态容易脱同步，导致 get()
+        # 恒返回空串、用户输入被吞。改为自绘提示层，行为完全可控。
         self.entry_hint = ctk.CTkLabel(
             entry_card, text="在这里默写单词…（回车提交）", anchor="w",
             fg_color="#1b1f25", corner_radius=0,
@@ -1141,8 +1148,16 @@ class CSVLearningApp:
             text_color="#6f7986")
         self.entry_hint.place(relx=0.0, rely=0.5, x=14, anchor="w")
         self.entry_hint.bind('<Button-1>', lambda e: self.answer_entry.focus_set())
-        self.answer_entry.bind('<<Modified>>',
-                               lambda e: self._sync_entry_hint(), add='+')
+        self.answer_var.trace_add("write", lambda *a: self._sync_entry_hint())
+        # 焦点离开输入框 → 结束「正在输入」状态，内容为空则恢复提示层
+        self.answer_entry.bind(
+            '<FocusOut>', lambda e: self.root.after(60, self._on_entry_focus_out), add='+')
+        # IME 组词区间：Tk 8.6 用这两个虚拟事件标记（见 tk8.6/entry.tcl）。
+        # 组词串画在光标处（输入框最左侧），必须让提示层同时让位。
+        self.answer_entry.bind('<<TkStartIMEMarkedText>>',
+                               lambda e: self._set_entry_typing(True), add='+')
+        self.answer_entry.bind('<<TkEndIMEMarkedText>>',
+                               lambda e: self._set_entry_typing(False), add='+')
 
         self.btn_submit = ctk.CTkButton(
             entry_card, text="提交", width=84, height=40, corner_radius=10,
@@ -1465,6 +1480,12 @@ class CSVLearningApp:
 
     def _entry_text(self, entry):
         """读取输入框真实文本。"""
+        var = getattr(self, "answer_var", None)
+        if var is not None:
+            try:
+                return var.get()
+            except Exception:
+                pass
         try:
             return entry._entry.get()
         except Exception:
@@ -1474,31 +1495,33 @@ class CSVLearningApp:
                 return ""
 
     def _sync_entry_hint(self):
-        """输入框为空时显示灰色提示层，有内容时隐藏。"""
-        entry = getattr(self, "answer_entry", None)
+        """输入框为空且未在输入时显示灰色提示层，否则隐藏。
+
+        提示层是叠在 Entry 之上的独立 Label，IME 组词串正好画在光标处
+        （输入框最左侧），两者一旦同时存在就会互相遮挡。
+        判定依据有两个：
+          - answer_var（StringVar）非空 → 有真实内容，隐藏
+          - _entry_typing 为真 → 正在打字 / IME 组词中，隐藏
+        """
         hint = getattr(self, "entry_hint", None)
-        if entry is None or hint is None:
+        if hint is None:
             return
+        var = getattr(self, "answer_var", None)
         try:
-            empty = entry._entry.get() == ""
+            empty = (var.get() == "") if var is not None else True
         except Exception:
-            empty = False
+            empty = True
         try:
-            if empty:
+            if empty and not getattr(self, "_entry_typing", False):
                 hint.place(relx=0.0, rely=0.5, x=14, anchor="w")
             else:
                 hint.place_forget()
         except Exception:
             pass
-        # Tk 的 modified 标志置位后不再重复派发 <<Modified>>，
-        # 这里手动清零，保证「删到空 → 又提示」能再次触发。
-        try:
-            entry._entry.edit_modified(False)
-        except Exception:
-            pass
 
     def _clear_entry(self, entry):
         """清空输入框，并同步灰色提示层的显隐。"""
+        self._entry_typing = False
         try:
             entry.delete(0, tk.END)
         except Exception:
@@ -1517,8 +1540,28 @@ class CSVLearningApp:
             except Exception:
                 pass
 
+    def _set_entry_typing(self, flag):
+        """设置「本轮是否正在输入」，并同步提示层显隐。
+
+        True  → 隐藏提示层（正在打字 / IME 组词中）
+        False → 内容为空时重新显示提示层
+        """
+        self._entry_typing = bool(flag)
+        self._sync_entry_hint()
+
+    def _on_entry_focus_out(self):
+        """焦点离开输入框：结束输入状态，内容为空则恢复提示层。"""
+        self._entry_typing = False
+        self._sync_entry_hint()
+
     def _entry_key_down(self, entry, event=None):
-        """保留的按键钩子：目前提示层不依赖 CTk 占位符，无需额外处理。"""
+        """按键钩子：一旦用户开始输入，就让灰色提示层让位。
+
+        IME 组词阶段 Entry 内容仍是空串，只有「用户已按键」这一信号可用；
+        不隐藏提示层，组词串（画在光标处）就会被提示文字压住。
+        """
+        self._entry_typing = True
+        self._sync_entry_hint()
         return
 
     # ==========================================================
