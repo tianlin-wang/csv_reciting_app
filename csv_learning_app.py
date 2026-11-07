@@ -11,6 +11,7 @@ import tkinter.font as tkfont
 import difflib
 import re
 import json
+import random
 import threading
 import customtkinter as ctk
 
@@ -60,6 +61,26 @@ def split_answers(s):
     s = str(s).strip()
     s = s.replace('；', ';').replace('，', ';').replace(',', ';')
     return [a.strip() for a in s.split(';') if a.strip()]
+
+
+def shuffled_rows(rows, start=0):
+    """返回乱序后的新列表：start 之前的题目保持原位，其余重新洗牌。
+
+    前缀不动可保证已答题目的 index、统计与错题本不会错位。
+    """
+    out = list(rows)
+    start = max(0, int(start))
+    tail = out[start:]
+    if len(tail) < 2:
+        return out
+    original = list(tail)
+    random.shuffle(tail)
+    if tail == original:
+        tail = original[1:] + original[:1]   # 保证洗牌后顺序确实变化
+    out[start:] = tail
+    return out
+
+
 try:
     import openai
     HAS_OPENAI = True
@@ -91,6 +112,7 @@ class OllamaAILearningAssistant:
         self.model = ""
         self.use_ai = True
         self.clean_parentheses = True
+        self.shuffle_enabled = True
         self.ollama_base_url = "http://localhost:11434"
         self.load_config()
 
@@ -105,6 +127,7 @@ class OllamaAILearningAssistant:
                     self.model = config.get('model', '')
                     self.use_ai = config.get('use_ai', True)
                     self.clean_parentheses = config.get('clean_parentheses', True)
+                    self.shuffle_enabled = config.get('shuffle_enabled', True)
                     self.ollama_base_url = config.get('ollama_base_url', 'http://localhost:11434')
             except:
                 pass
@@ -116,6 +139,7 @@ class OllamaAILearningAssistant:
             'model': self.model,
             'use_ai': self.use_ai,
             'clean_parentheses': self.clean_parentheses,
+            'shuffle_enabled': getattr(self, 'shuffle_enabled', True),
             'ollama_base_url': self.ollama_base_url
         }
         with open('ai_config.json', 'w', encoding='utf-8') as f:
@@ -141,27 +165,19 @@ class OllamaAILearningAssistant:
         self.clean_parentheses = clean_parentheses
         self.save_config()
 
+    def set_shuffle_enabled(self, enabled):
+        self.shuffle_enabled = bool(enabled)
+        self.save_config()
+
     def set_ollama_base_url(self, url):
         self.ollama_base_url = url
         self.save_config()
-
-    def check_ollama_running(self, auto_start=True):
-        if self._check_ollama_http():
-            return True
-        if auto_start:
-            started = self.start_ollama()
-            if started:
-                for _ in range(30):
-                    time.sleep(1)
-                    if self._check_ollama_http():
-                        return True
-        return False
 
     def _check_ollama_http(self):
         try:
             url = f"{self.ollama_base_url}/api/tags"
             req = urllib.request.Request(url, method='GET')
-            with urllib.request.urlopen(req, timeout=3) as response:
+            with urllib.request.urlopen(req, timeout=3):
                 return True
         except:
             return False
@@ -186,7 +202,7 @@ class OllamaAILearningAssistant:
             try:
                 la = os.environ.get('LOCALAPPDATA', '')
                 if la:
-                    for root, dirs, files in os.walk(la):
+                    for root, _, files in os.walk(la):
                         if 'ollama.exe' in files:
                             candidates.append(os.path.join(root, 'ollama.exe'))
                             break
@@ -319,8 +335,7 @@ class OllamaAILearningAssistant:
             elif self.ai_provider == 'baidu' and self.api_key:
                 return self._call_baidu(user_answer, correct_answer, col1, col2)
 
-        except Exception as e:
-            import difflib as _difflib
+        except Exception:
             user_clean = re.sub(r'\s+', '', str(user_answer).lower())
             possible = split_answers(correct_answer)
             best_sim = 0.0
@@ -331,7 +346,7 @@ class OllamaAILearningAssistant:
                     best_sim = 1.0
                     best_ans = a
                     break
-                sim = _difflib.SequenceMatcher(None, user_clean, ac).ratio()
+                sim = difflib.SequenceMatcher(None, user_clean, ac).ratio()
                 if sim > best_sim:
                     best_sim = sim
                     best_ans = a
@@ -368,8 +383,6 @@ class OllamaAILearningAssistant:
         try:
             cleaned = result_text.strip()
 
-            import re
-
             is_correct = False
             analysis = ''
 
@@ -400,7 +413,6 @@ class OllamaAILearningAssistant:
                     if '正确' in cleaned and '错误' not in cleaned:
                         is_correct = True
                     else:
-                        import difflib as _difflib
                         user_answer = getattr(self, '_last_user_answer', '')
                         correct_answer = getattr(self, '_last_correct_answer', '')
                         if user_answer and correct_answer:
@@ -412,7 +424,7 @@ class OllamaAILearningAssistant:
                                 if uc == ac:
                                     best_sim = 1.0
                                     break
-                                sim = _difflib.SequenceMatcher(None, uc, ac).ratio()
+                                sim = difflib.SequenceMatcher(None, uc, ac).ratio()
                                 if sim > best_sim:
                                     best_sim = sim
                             is_correct = best_sim >= 0.85
@@ -446,7 +458,7 @@ class OllamaAILearningAssistant:
 
             return rj
 
-        except Exception as e:
+        except Exception:
             user_answer = getattr(self, '_last_user_answer', '')
             correct_answer = getattr(self, '_last_correct_answer', '')
 
@@ -688,13 +700,11 @@ class _PageStack(ctk.CTkFrame):
         self.grid_rowconfigure(0, weight=1)
 
         self._page_dict = {}
-        self._name_list = []
         self._current_name = ""
 
     def add(self, name):
         frame = ctk.CTkFrame(self, fg_color="#21252b", corner_radius=0)
         self._page_dict[name] = frame
-        self._name_list.append(name)
 
         if not self._current_name:
             self._current_name = name
@@ -709,19 +719,12 @@ class _PageStack(ctk.CTkFrame):
         self._current_name = name
         self._page_dict[name].grid(row=0, column=0, sticky="nsew")
 
-    @property
-    def current(self):
-        return self._current_name
-
-    def tab(self, name):
-        return self._page_dict[name]
-
 
 class CSVLearningApp:
     def __init__(self, root):
         self.root = root
         self.root.title("📚 词汇学习默写工具")
-        self.geometry("900x760")
+        self.root.geometry("900x760")
         # 下限：单列布局，窄到 560 也能正常默写
         self.root.minsize(560, 520)
 
@@ -750,6 +753,7 @@ class CSVLearningApp:
         self.root.bind('<Configure>', self._on_window_resize)
         self.root.bind('<Escape>', self._on_global_escape, add='+')
         self.root.bind('<Button-1>', self._on_global_click, add='+')
+        self.root.bind('<Right>', self._on_global_right, add='+')
         self.root.after(100, self._update_all_font_sizes)
         self.root.after(800, self._ensure_ollama_running_async_startup)
 
@@ -771,19 +775,11 @@ class CSVLearningApp:
         except Exception:
             pass
 
-    def _update_paren_tooltip(self):
-        enabled = self.clean_paren_var.get() if self.clean_paren_var else True
-        self._sync_paren_style_from_state(enabled)
-
     def _sync_paren_ui_from_config(self):
         val = self.ai_assistant.clean_parentheses
         if self.clean_paren_var is not None:
             self.clean_paren_var.set(val)
-        self._update_paren_tooltip()
         self._sync_paren_style_from_state(val)
-
-    def geometry(self, size):
-        self.root.geometry(size)
 
     def _on_window_resize(self, event):
         if event.widget is not self.root:
@@ -812,7 +808,7 @@ class CSVLearningApp:
             started = self.ai_assistant.start_ollama()
             if not started:
                 return
-            for i in range(30):
+            for _ in range(30):
                 time.sleep(1)
                 if self.ai_assistant._check_ollama_http():
                     self.root.after(0, self.update_ai_status)
@@ -839,7 +835,6 @@ class CSVLearningApp:
             if current not in models:
                 preferred = 'qwen2.5:7b' if 'qwen2.5:7b' in models else models[0]
                 self.model_combo.set(preferred)
-            self.ai_assistant.get_available_providers()['ollama']['models'] = models
         except Exception:
             pass
 
@@ -945,10 +940,7 @@ class CSVLearningApp:
     def _update_all_font_sizes(self):
         win_scale = self._compute_scale()
         ui_scale = max(0.7, min(win_scale, 2.0))
-        question_attrs = ('col1_value', 'col2_value')
         for attr_name, (family, base_size, kwargs) in self._font_specs.items():
-            if attr_name in question_attrs:
-                continue
             try:
                 widget = getattr(self, attr_name, None)
                 if widget is None:
@@ -1025,19 +1017,24 @@ class CSVLearningApp:
         self.btn_ai.grid(row=0, column=2, padx=(0, 6))
         self._bind_hint(self.btn_ai, "打开 AI 设置页")
 
+        self.btn_shuffle = self._pill(bar, "打乱", self.shuffle_questions, width=48)
+        self.btn_shuffle.grid(row=0, column=3, padx=(0, 6))
+        self._bind_hint(self.btn_shuffle, "重新打乱题目顺序（保留已答题与统计）")
+
         self.btn_more = self._pill(bar, "⋯", self._toggle_more_menu, width=34)
-        self.btn_more.grid(row=0, column=3)
+        self.btn_more.grid(row=0, column=4)
         self._bind_hint(self.btn_more, "更多操作")
 
         self._register_font('file_label', 'Microsoft YaHei UI', 12)
         self._register_font('btn_file', 'Microsoft YaHei UI', 12)
         self._register_font('btn_ai', 'Microsoft YaHei UI', 12)
+        self._register_font('btn_shuffle', 'Microsoft YaHei UI', 12)
         self._register_font('btn_more', 'Microsoft YaHei UI', 12)
 
         # ---- 状态行：轮次 / 进度 / 对错 / AI 状态 合并为一行 ----
         self._ai_status_text = "Ollama 未连接"
         self.status_label = ctk.CTkLabel(
-            wrap, text="第 1 轮 · 0/0 · 对 0 错 0 · Ollama 未连接", anchor="w",
+            wrap, text="第 1 轮 · 0/0 · 对 0 错 0 · Ollama 未连接 · 乱序", anchor="w",
             font=ctk.CTkFont(family='Microsoft YaHei UI', size=12),
             text_color="#7f8896")
         self.status_label.grid(row=1, column=0, sticky=(tk.W, tk.E), padx=14, pady=(6, 0))
@@ -1136,7 +1133,7 @@ class CSVLearningApp:
             textvariable=self.answer_var)
         self.answer_entry.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=(0, 8))
         self.answer_entry.bind('<Return>', self._submit_current)
-        self.answer_entry.bind('<Key>', lambda e: self._entry_key_down(self.answer_entry, e))
+        self.answer_entry.bind('<Key>', self._entry_key_down)
 
         # CTk 6.0 的占位符在获得焦点时会被删掉，且标志
         # (_placeholder_text_active) 与内部 Entry 状态容易脱同步，导致 get()
@@ -1209,7 +1206,9 @@ class CSVLearningApp:
         self.ai_frame.grid_remove()
 
         self._more_menu = None
+        self._shuffle_menu_btn = None
         self._answer_revealed = False
+        self._update_shuffle_ui()
 
     # ==========================================================
     # 设计稿风格的小控件
@@ -1262,6 +1261,80 @@ class CSVLearningApp:
             pass
 
     # ==========================================================
+    # 乱序出题
+    # ==========================================================
+
+    def _update_shuffle_ui(self):
+        """同步乱序开关在顶栏按钮 / 更多菜单 / 状态行的显示。"""
+        enabled = bool(getattr(self.ai_assistant, 'shuffle_enabled', True))
+        try:
+            self.btn_shuffle.configure(
+                fg_color="#2b6f9e" if enabled else "#2f3540",
+                text_color="#ffffff" if enabled else "#cfd6df")
+        except Exception:
+            pass
+        btn = getattr(self, '_shuffle_menu_btn', None)
+        if btn is not None:
+            try:
+                btn.configure(text=f"乱序出题：{'开' if enabled else '关'}")
+            except Exception:
+                pass
+        try:
+            self._refresh_status_line()
+        except Exception:
+            pass
+
+    def _toggle_shuffle_enabled(self):
+        """「⋯ 更多 → 乱序出题」：控制加载 CSV / 新一轮复习时是否自动打乱。"""
+        enabled = not bool(getattr(self.ai_assistant, 'shuffle_enabled', True))
+        try:
+            self.ai_assistant.set_shuffle_enabled(enabled)
+        except Exception:
+            self.ai_assistant.shuffle_enabled = enabled   # 配置写盘失败也要让本轮生效
+        self._update_shuffle_ui()
+        state = "开启" if enabled else "关闭"
+        try:
+            self.ai_result_text.insert(
+                tk.END, f"\n🔀 乱序出题已{state}（下次加载 CSV 或开始新一轮复习时生效）\n")
+            self.ai_result_text.see(tk.END)
+        except Exception:
+            pass
+
+    def shuffle_questions(self):
+        """顶栏「打乱」：重排未作答题目，已答题目、统计、错题本保持不变。"""
+        if not self.current_csv_data:
+            messagebox.showwarning("提示", "请先加载 CSV 文件！")
+            return
+        if self.processing:
+            messagebox.showinfo("提示", "正在判定，请稍后再打乱。")
+            return
+
+        info = getattr(self, "last_judgment_info", None)
+        judged = bool(info) and info.get("index") == self.current_index
+        start = self.current_index + 1 if judged else self.current_index
+        remaining = len(self.current_csv_data) - start
+        if remaining < 2:
+            messagebox.showinfo(
+                "提示", "剩余题目不足 2 条，无需打乱。\n\n加载 CSV 或开始新一轮复习时会自动乱序。")
+            return
+
+        self.current_csv_data = shuffled_rows(self.current_csv_data, start)
+        if not judged:
+            self.last_judgment_info = None
+            self._answer_revealed = False
+            self.display_current_question()
+        self.update_progress()
+        try:
+            self.ai_result_text.insert(
+                tk.END, f"\n🔀 已重新打乱第 {start + 1}～{len(self.current_csv_data)} 题"
+                        f"（共 {remaining} 题），已答题与统计不变\n")
+            self.ai_result_text.see(tk.END)
+            self.btn_shuffle.configure(text="✓")
+            self.root.after(900, lambda: self.btn_shuffle.configure(text="打乱"))
+        except Exception:
+            pass
+
+    # ==========================================================
     # 「⋯ 更多」浮层
     # ==========================================================
 
@@ -1293,19 +1366,25 @@ class CSVLearningApp:
             ("保存进度", self.save_progress, False),
             ("读取进度", self.load_progress, False),
             ("开始新一轮复习", self.start_new_round, False),
+            ("乱序出题", self._toggle_shuffle_enabled, False),
             ("导出错题本", self.export_wrong_answers, False),
             ("导出 AI 判定日志", self.export_ai_logs, False),
             ("重置", self.reset_app, True),
         ]
         row = 2
         for idx, (text, cmd, danger) in enumerate(items):
+            is_shuffle_toggle = text == "乱序出题"
+            label = (f"乱序出题：{'开' if self.ai_assistant.shuffle_enabled else '关'}"
+                     if is_shuffle_toggle else text)
             btn = ctk.CTkButton(
-                menu, text=text, height=30, anchor="w",
+                menu, text=label, height=30, anchor="w",
                 command=lambda c=cmd: self._run_more(c),
                 fg_color="transparent", hover_color="#2b313b",
                 font=ctk.CTkFont(family='Microsoft YaHei UI', size=12),
                 text_color="#f09595" if danger else "#dfe4ea")
             btn.grid(row=row, column=0, sticky="ew", padx=6, pady=1)
+            if is_shuffle_toggle:
+                self._shuffle_menu_btn = btn
             row += 1
             if idx < len(items) - 1:
                 line = ctk.CTkFrame(menu, height=1, fg_color="#2c313a")
@@ -1340,9 +1419,39 @@ class CSVLearningApp:
         except Exception:
             pass
 
-    def _on_global_escape(self, event=None):
-        """Esc 关闭浮层。"""
-        self._close_more_menu()
+    def _on_global_right(self, event=None):
+        """方向键 → 下一题。
+
+        - 本题已判定：直接翻页（不重复计分）
+        - 本题未作答且答案框为空：等同「跳过」按钮，计入错题后翻页
+        - 框里正在输入 / 焦点在设置页输入框：不拦截，右键仍用于移动光标
+        """
+        if self.processing or not self.current_csv_data:
+            return
+        if self.current_index >= len(self.current_csv_data):
+            return
+
+        widget = getattr(event, "widget", None)
+        try:
+            wclass = widget.winfo_class() if widget is not None else ""
+        except Exception:
+            wclass = ""
+        entry = getattr(self, "answer_entry", None)
+        # CTkEntry 的焦点有时落在外框 Frame 上，而不只是内部 tk.Entry，
+        # 所以「属于答案框子树」和「本身是文本控件」要分别判断。
+        in_answer = entry is not None and self._is_descendant(widget, entry)
+        if not in_answer and wclass in ("Entry", "TEntry", "Text", "TText"):
+            return  # 设置页 / AI 结果区：保留光标移动
+        if in_answer and self._entry_text(entry).strip():
+            return  # 作答中（或判定后重新输入）：保留光标移动
+
+        info = getattr(self, "last_judgment_info", None)
+        judged = bool(info) and info.get("index") == self.current_index
+        if judged:
+            self.next_question()
+        else:
+            self.skip_question()  # 不会的题：计入错题并翻页
+        return "break"
 
     def _on_global_click(self, event):
         """点击浮层外部时关闭「⋯ 更多」浮层。"""
@@ -1389,11 +1498,9 @@ class CSVLearningApp:
         try:
             if expanded:
                 self.ai_frame.grid()
-                self.btn_detail.configure(text="AI 判定详情")
                 self.detail_arrow.configure(text="▴")
             else:
                 self.ai_frame.grid_remove()
-                self.btn_detail.configure(text="AI 判定详情")
                 self.detail_arrow.configure(text="▾")
         except Exception:
             pass
@@ -1528,18 +1635,6 @@ class CSVLearningApp:
             pass
         self._sync_entry_hint()
 
-    def _set_entry_hint(self, entry, text):
-        """安全更换输入框提示文字。
-
-        现在提示文字由自绘的 entry_hint 层承担，这里只改文案。
-        """
-        hint = getattr(self, "entry_hint", None)
-        if hint is not None:
-            try:
-                hint.configure(text=text)
-            except Exception:
-                pass
-
     def _set_entry_typing(self, flag):
         """设置「本轮是否正在输入」，并同步提示层显隐。
 
@@ -1554,7 +1649,7 @@ class CSVLearningApp:
         self._entry_typing = False
         self._sync_entry_hint()
 
-    def _entry_key_down(self, entry, event=None):
+    def _entry_key_down(self, event=None):
         """按键钩子：一旦用户开始输入，就让灰色提示层让位。
 
         IME 组词阶段 Entry 内容仍是空串，只有「用户已按键」这一信号可用；
@@ -1562,7 +1657,6 @@ class CSVLearningApp:
         """
         self._entry_typing = True
         self._sync_entry_hint()
-        return
 
     # ==========================================================
     # 单词 / 词性字号自适应
@@ -1881,7 +1975,7 @@ class CSVLearningApp:
                 elif self.ai_assistant.model and self.ai_assistant.model in models:
                     default_model = self.ai_assistant.model
                 else:
-                    default_model = models[0] if models else ''
+                    default_model = models[0]
                 
                 self.model_combo.set(default_model)
 
@@ -1898,7 +1992,7 @@ class CSVLearningApp:
 
         exe = self.ai_assistant.find_ollama_executable()
         if not exe:
-            self.ollama_status_label.configure(text=f"状态: ❌ 未找到 Ollama 程序", text_color="#e74c3c")
+            self.ollama_status_label.configure(text="状态: ❌ 未找到 Ollama 程序", text_color="#e74c3c")
             return
 
         self.ollama_status_label.configure(text="状态: 🦙 尝试自动启动 Ollama...", text_color="#f39c12")
@@ -1906,7 +2000,7 @@ class CSVLearningApp:
         def worker():
             started = self.ai_assistant.start_ollama()
             if started:
-                for i in range(30):
+                for _ in range(30):
                     time.sleep(1)
                     if self.ai_assistant._check_ollama_http():
                         self.root.after(0, lambda: self._ollama_conn_success(url))
@@ -1928,9 +2022,6 @@ class CSVLearningApp:
             if not self.model_combo.get() or self.model_combo.get() not in models:
                 default = 'qwen2.5:7b' if 'qwen2.5:7b' in models else models[0]
                 self.model_combo.set(default)
-            
-            providers = self.ai_assistant.get_available_providers()
-            providers['ollama']['models'] = sorted(models)
             
             self.ollama_status_label.configure(text=f"状态: ✅ 已连接 - 找到 {len(models)} 个模型", text_color="#2ecc71")
         else:
@@ -2020,7 +2111,8 @@ class CSVLearningApp:
             messagebox.showerror("错误", "没有成功加载任何文件！\n\n" + "\n".join(skipped))
             return
 
-        self.current_csv_data = all_data
+        shuffled = bool(getattr(self.ai_assistant, 'shuffle_enabled', True))
+        self.current_csv_data = shuffled_rows(all_data) if shuffled else all_data
         self.csv_file_paths = loaded_files
         self.csv_file_path = loaded_files[0] if len(loaded_files) == 1 else None
 
@@ -2048,6 +2140,8 @@ class CSVLearningApp:
             self.ai_result_text.insert(tk.END, f"✅ 成功合并 {len(loaded_files)} 个文件，共 {self.total_questions} 条记录\n")
             for fp in loaded_files:
                 self.ai_result_text.insert(tk.END, f"   📄 {os.path.basename(fp)}\n")
+        if shuffled:
+            self.ai_result_text.insert(tk.END, "🔀 已打乱题目顺序（「⋯ 更多 → 乱序出题」可关闭）\n")
         if skipped:
             self.ai_result_text.insert(tk.END, f"\n⚠️ 跳过 {len(skipped)} 个文件:\n")
             for s in skipped:
@@ -2071,9 +2165,9 @@ class CSVLearningApp:
                 model_info = f" ({self.ai_assistant.model})" if self.ai_assistant.model else ""
                 self.ai_result_text.insert(tk.END, f"🤖 使用{provider_name}{model_info}\n")
             else:
-                self.ai_result_text.insert(tk.END, f"⚙️ 使用本地相似度算法\n")
+                self.ai_result_text.insert(tk.END, "⚙️ 使用本地相似度算法\n")
         else:
-            self.ai_result_text.insert(tk.END, f"⚙️ AI功能已禁用，使用本地算法\n")
+            self.ai_result_text.insert(tk.END, "⚙️ AI功能已禁用，使用本地算法\n")
 
         self.ai_result_text.insert(tk.END, "\n" + "="*75 + "\n\n")
 
@@ -2108,7 +2202,8 @@ class CSVLearningApp:
                 "current_round": self.current_round,
                 "correct_count": self.correct_count,
                 "wrong_count": self.wrong_count,
-                "wrong_answers": self.wrong_answers
+                "wrong_answers": self.wrong_answers,
+                "shuffle_enabled": bool(getattr(self.ai_assistant, 'shuffle_enabled', True))
             }
 
             with open(file_path, 'w', encoding='utf-8') as f:
@@ -2208,6 +2303,15 @@ class CSVLearningApp:
                 messagebox.showerror("错误", "恢复的进度数据为空！")
                 return
 
+            # 进度文件保存了乱序后的题目顺序，恢复时沿用当时的开关状态
+            saved_shuffle = data.get("shuffle_enabled")
+            if isinstance(saved_shuffle, bool):
+                try:
+                    self.ai_assistant.set_shuffle_enabled(saved_shuffle)
+                except Exception:
+                    self.ai_assistant.shuffle_enabled = saved_shuffle
+            self._update_shuffle_ui()
+
             self.update_progress()
             self.update_ai_status()
             self.display_current_question()
@@ -2268,8 +2372,9 @@ class CSVLearningApp:
         """把轮次 / 进度 / 对错统计 / AI 状态合并成一行状态条。"""
         total = len(self.current_csv_data)
         current = min(self.current_index + 1, total) if total else 0
+        order = "乱序" if getattr(self.ai_assistant, 'shuffle_enabled', True) else "顺序"
         text = (f"第 {self.current_round} 轮 · {current}/{total} · "
-                f"对 {self.correct_count} 错 {self.wrong_count} · {self._ai_status_text}")
+                f"对 {self.correct_count} 错 {self.wrong_count} · {self._ai_status_text} · {order}")
         try:
             self.status_label.configure(text=text)
         except Exception:
@@ -2303,7 +2408,6 @@ class CSVLearningApp:
 
         self.processing = True
 
-        import re
         user_clean = re.sub(r'\s+', '', user_answer.lower())
         possible_answers = split_answers(correct_answer)
         exact_match = False
@@ -2325,8 +2429,6 @@ class CSVLearningApp:
 
     def submit_with_ai(self, user_answer, correct_answer, col1, col2):
         try:
-            self._last_user_answer = user_answer
-            self._last_correct_answer = correct_answer
             self.ai_assistant._last_user_answer = user_answer
             self.ai_assistant._last_correct_answer = correct_answer
 
@@ -2334,7 +2436,7 @@ class CSVLearningApp:
                 self.root.after(0, lambda: self.ai_result_text.insert(tk.END, "🦙 Ollama 未运行，正在后台启动...\n") or self.ai_result_text.see(tk.END))
                 started = self.ai_assistant.start_ollama()
                 if started:
-                    for i in range(30):
+                    for _ in range(30):
                         time.sleep(1)
                         if self.ai_assistant._check_ollama_http():
                             self.root.after(0, lambda: self.ai_result_text.insert(tk.END, "✅ Ollama 已就绪\n") or self.ai_result_text.see(tk.END))
@@ -2355,14 +2457,11 @@ class CSVLearningApp:
             self.root.after(0, lambda: self.display_ai_result(
                 user_answer, correct_answer, col1, col2, ai_result
             ))
-        except Exception as e:
+        except Exception:
             self.root.after(0, lambda: self.submit_local(user_answer, correct_answer, col1, col2))
 
     def submit_local(self, user_answer, correct_answer, col1, col2):
         is_correct, similarity, analysis = self.local_judge(user_answer, correct_answer)
-        self._last_user_answer = user_answer
-        self._last_correct_answer = correct_answer
-        
         result = {
             'is_correct': is_correct,
             'confidence': similarity,
@@ -2409,27 +2508,15 @@ class CSVLearningApp:
                 self.submit_local(user_answer, correct_answer, col1, col2)
                 return
 
-            import re as _re
-            user_clean = _re.sub(r'\s+', '', str(user_answer).lower())
+            user_clean = re.sub(r'\s+', '', str(user_answer).lower())
             possible_answers = split_answers(correct_answer)
             exact_match = False
             for ans in possible_answers:
-                if user_clean == _re.sub(r'\s+', '', strip_parentheses(ans, self.ai_assistant).lower()):
+                if user_clean == re.sub(r'\s+', '', strip_parentheses(ans, self.ai_assistant).lower()):
                     exact_match = True
                     break
 
-            if exact_match:
-                is_correct = True
-                confidence = 1.0
-                similarity_score = 1.0
-                analysis = '✅ 完全匹配'
-                suggestions = ''
-            else:
-                is_correct = ai_result['is_correct']
-                confidence = ai_result.get('confidence', 0.5)
-                analysis = ai_result.get('analysis', '')
-                suggestions = ai_result.get('suggestions', '')
-                similarity_score = ai_result.get('similarity_score', confidence)
+            is_correct = True if exact_match else bool(ai_result['is_correct'])
 
             providers = self.ai_assistant.get_available_providers()
             provider = self.ai_assistant.ai_provider
@@ -2470,7 +2557,7 @@ class CSVLearningApp:
 
             self.update_progress()
             # 判定结果和正确答案需要停留给用户看，否则刚刷新出来就被下一题覆盖。
-            # 用户再次回车/点提交时手动前进。
+            # 用户再次回车 / 点提交 / 按 → 时手动前进。
             self._refresh_verdict()
             try:
                 self.answer_entry.focus_set()
@@ -2479,15 +2566,6 @@ class CSVLearningApp:
 
         finally:
             self.processing = False
-
-    def show_answer(self):
-        """查看答案：把正确答案写进 AI 详情区。"""
-        if self.current_csv_data and self.current_index < len(self.current_csv_data):
-            correct_answer = self.current_csv_data[self.current_index][2] if len(self.current_csv_data[self.current_index]) > 2 else ""
-            clean_display = clean_answer_string(correct_answer, self.ai_assistant)
-            result_text = f"\n💡 正确答案: {clean_display}\n"
-            self.ai_result_text.insert(tk.END, result_text)
-            self.ai_result_text.see(tk.END)
 
     def skip_question(self):
         if self.current_csv_data and self.current_index < len(self.current_csv_data):
@@ -2608,6 +2686,9 @@ class CSVLearningApp:
             return
 
         original_wrong = [row[:3] for row in self.wrong_answers]
+        shuffled = bool(getattr(self.ai_assistant, 'shuffle_enabled', True))
+        if shuffled:
+            original_wrong = shuffled_rows(original_wrong)
         self.current_csv_data = original_wrong
         self.current_index = 0
         self.wrong_answers = []
@@ -2623,7 +2704,10 @@ class CSVLearningApp:
         result_text += f"🔄 开始第 {self.current_round} 轮复习\n"
         result_text += f"{'='*80}\n\n"
         result_text += f"📚 本轮题目数: {self.total_questions}\n"
-        result_text += f"🎯 目标: 掌握所有错题！\n\n"
+        result_text += f"🎯 目标: 掌握所有错题！\n"
+        if shuffled:
+            result_text += f"🔀 错题顺序已打乱\n"
+        result_text += f"\n"
         self.ai_result_text.insert(tk.END, result_text)
         self.ai_result_text.see(tk.END)
 
@@ -2726,14 +2810,14 @@ class CSVLearningApp:
         self.col2_value.configure(text="-")
         self._clear_entry(self.answer_entry)
         self.last_judgment_info = None
+        self.btn_shuffle.configure(text="打乱")
         self.ai_result_text.delete(1.0, tk.END)
         self.update_progress()
+        self._update_shuffle_ui()
         self.update_ai_status()
         self._refresh_verdict()
         self._refit_question_fonts()
 
-
-import sys
 
 def main():
     root = ctk.CTk()
