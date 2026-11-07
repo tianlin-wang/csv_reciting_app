@@ -1453,6 +1453,10 @@ class CSVLearningApp:
             self.skip_question()  # 不会的题：计入错题并翻页
         return "break"
 
+    def _on_global_escape(self, event=None):
+        """Esc 关闭「⋯ 更多」浮层。"""
+        self._close_more_menu()
+
     def _on_global_click(self, event):
         """点击浮层外部时关闭「⋯ 更多」浮层。"""
         menu = getattr(self, "_more_menu", None)
