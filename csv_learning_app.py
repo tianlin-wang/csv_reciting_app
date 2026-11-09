@@ -282,7 +282,7 @@ class OllamaAILearningAssistant:
 
     def get_available_providers(self):
         providers = {
-            'ollama': {'name': '🦙 Ollama (本地)', 'models': [], 'desc': '完全本地，免费无限用'},
+            'ollama': {'name': 'Ollama (本地)', 'models': [], 'desc': '完全本地，免费无限用'},
             'local': {'name': '本地算法', 'models': [], 'desc': '无需网络，快速响应'},
         }
 
@@ -295,20 +295,20 @@ class OllamaAILearningAssistant:
 
         if HAS_DASHSCOPE:
             providers['qwen'] = {
-                'name': '🇨🇳 通义千问 (阿里)',
+                'name': '通义千问 (阿里)',
                 'models': ['qwen-turbo', 'qwen-plus', 'qwen-max', 'qwen-max-longcontext'],
                 'desc': '阿里云大模型'
             }
 
         if HAS_ZHIPU:
             providers['zhipu'] = {
-                'name': '🇨🇳 智谱GLM',
+                'name': '智谱GLM',
                 'models': ['glm-4', 'glm-4-flash', 'glm-4-plus'],
                 'desc': '清华智谱AI'
             }
 
         providers['baidu'] = {
-            'name': '🇨🇳 文心一言 (百度)',
+            'name': '文心一言 (百度)',
             'models': ['ernie-bot-4', 'ernie-bot', 'ernie-bot-turbo'],
             'desc': '百度文心大模型'
         }
@@ -355,7 +355,7 @@ class OllamaAILearningAssistant:
             return {
                 'is_correct': is_correct,
                 'confidence': best_sim,
-                'analysis': f'AI异常，本地判定{"✅对" if is_correct else "❌错"} (相似度{best_sim:.0%})',
+                'analysis': f'AI异常，本地判定{"对" if is_correct else "错"} (相似度{best_sim:.0%})',
                 'suggestions': f'标准答案：{clean_best}' if not is_correct else '',
                 'similarity_score': best_sim
             }
@@ -367,11 +367,11 @@ class OllamaAILearningAssistant:
 错误只返回：错误，正确答案是：XXX
 
 例子：
-标准: 苹果 | 答: 苹果 → 正确，正确答案是：苹果
-标准: 跑;奔跑 | 答: 奔跑 → 正确，正确答案是：跑;奔跑
-标准: 高兴的 | 答: 高兴 → 错误，正确答案是：高兴的
-标准: 吃 | 答: 食物 → 错误，正确答案是：吃
-标准: 橙子;柑橘 | 答: 橘子 → 正确，正确答案是：橙子;柑橘
+标准: 苹果 | 答: 苹果 -> 正确，正确答案是：苹果
+标准: 跑;奔跑 | 答: 奔跑 -> 正确，正确答案是：跑;奔跑
+标准: 高兴的 | 答: 高兴 -> 错误，正确答案是：高兴的
+标准: 吃 | 答: 食物 -> 错误，正确答案是：吃
+标准: 橙子;柑橘 | 答: 橘子 -> 正确，正确答案是：橙子;柑橘
 
 题目：{col1} ({col2})
 标准：{clean_correct}
@@ -388,7 +388,7 @@ class OllamaAILearningAssistant:
 
             if cleaned.startswith('正确') or cleaned == '正确':
                 is_correct = True
-                analysis = '✅ AI判定正确'
+                analysis = 'AI判定正确'
             elif cleaned.startswith('错误') or '错误' in cleaned[:10]:
                 is_correct = False
                 m = re.search(r'正确答案[是为：:]*[：:\s]*([^\n。，]+)', cleaned)
@@ -453,7 +453,7 @@ class OllamaAILearningAssistant:
                         rj['is_correct'] = True
                         rj['confidence'] = 1.0
                         rj['similarity_score'] = 1.0
-                        rj['analysis'] = '✅ 完全匹配'
+                        rj['analysis'] = '完全匹配'
                         break
 
             return rj
@@ -471,7 +471,7 @@ class OllamaAILearningAssistant:
                         return {
                             'is_correct': True,
                             'confidence': 1.0,
-                            'analysis': '✅ 正确',
+                            'analysis': '正确',
                             'suggestions': '',
                             'similarity_score': 1.0
                         }
@@ -690,7 +690,7 @@ class _PageStack(ctk.CTkFrame):
     """无标签栏的多页面容器。
 
     早期版本用 CTkSegmentedButton 做「学习模式 / AI设置」标签栏，但顶栏已经有
-    「AI」胶囊、设置页也有「← 学习」返回，标签栏纯属重复且占用纵向空间。
+    「AI」胶囊、设置页也有「返回学习」按钮，标签栏纯属重复且占用纵向空间。
     这里只保留切换逻辑，标签栏彻底去掉。
     """
 
@@ -723,7 +723,7 @@ class _PageStack(ctk.CTkFrame):
 class CSVLearningApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("📚 词汇学习默写工具")
+        self.root.title("词汇学习默写工具")
         self.root.geometry("900x760")
         # 下限：单列布局，窄到 560 也能正常默写
         self.root.minsize(560, 520)
@@ -761,7 +761,7 @@ class CSVLearningApp:
         enabled = self.clean_paren_var.get()
         self.ai_assistant.set_clean_parentheses(enabled)
         status = "已开启" if enabled else "已关闭"
-        self.ai_result_text.insert(tk.END, f"🧹 括号清理功能 {status}\n")
+        self.ai_result_text.insert(tk.END, f"括号清理功能 {status}\n")
         self.ai_result_text.see(tk.END)
 
     def _sync_paren_style_from_state(self, enabled):
@@ -843,10 +843,10 @@ class CSVLearningApp:
             self.root.after(0, lambda: self._on_ollama_ready(on_done, silent))
             return
         if not silent:
-            self.ai_result_text.insert(tk.END, "🦙 Ollama 未运行，正在自动启动...\n")
+            self.ai_result_text.insert(tk.END, "Ollama 未运行，正在自动启动...\n")
             self.ai_result_text.see(tk.END)
             try:
-                self.ollama_status_label.configure(text="🦙 正在启动 Ollama...", text_color="#f39c12")
+                self.ollama_status_label.configure(text="正在启动 Ollama...", text_color="#f39c12")
             except Exception:
                 pass
 
@@ -861,7 +861,7 @@ class CSVLearningApp:
                     self.root.after(0, lambda: self._on_ollama_ready(on_done, silent))
                     return
                 if not silent and (i + 1) % 5 == 0:
-                    self.root.after(0, lambda sec=i+1: self.ai_result_text.insert(tk.END, f"  ⏳ 等待 Ollama 就绪 ({sec}s)...\n") or self.ai_result_text.see(tk.END))
+                    self.root.after(0, lambda sec=i+1: self.ai_result_text.insert(tk.END, f"  等待 Ollama 就绪 ({sec}s)...\n") or self.ai_result_text.see(tk.END))
             self.root.after(0, lambda: self._on_ollama_failed(on_done, silent))
 
         t = threading.Thread(target=worker, daemon=True)
@@ -870,7 +870,7 @@ class CSVLearningApp:
     def _on_ollama_ready(self, on_done, silent):
         self.update_ai_status()
         if not silent:
-            self.ai_result_text.insert(tk.END, "✅ Ollama 已就绪！\n")
+            self.ai_result_text.insert(tk.END, "Ollama 已就绪！\n")
             self.ai_result_text.see(tk.END)
         self._refresh_models_silent()
         if on_done:
@@ -884,13 +884,13 @@ class CSVLearningApp:
         exe = self.ai_assistant.find_ollama_executable()
         if not silent:
             if exe:
-                msg = f"⚠️ 自动启动 Ollama 超时，将使用本地相似度算法\n💡 可手动在终端运行: \"{exe} serve\""
+                msg = f"自动启动 Ollama 超时，将使用本地相似度算法\n可手动在终端运行: \"{exe} serve\""
             else:
-                msg = "⚠️ 未找到 Ollama 可执行文件\n💡 请从 https://ollama.com 下载安装后重试"
+                msg = "未找到 Ollama 可执行文件\n请从 https://ollama.com 下载安装后重试"
             self.ai_result_text.insert(tk.END, msg + "\n")
             self.ai_result_text.see(tk.END)
             try:
-                self.ollama_status_label.configure(text="🦙 Ollama (未连接)", text_color="#e74c3c")
+                self.ollama_status_label.configure(text="Ollama (未连接)", text_color="#e74c3c")
             except Exception:
                 pass
         if on_done:
@@ -984,9 +984,9 @@ class CSVLearningApp:
     def setup_learning_tab(self, parent):
         """构建唯一的学习界面（不再区分完整模式 / 简洁模式）。
 
-        自上而下：工具条 → 状态行 → 判定卡 → 单词卡 → 正确答案卡
-        → 输入行 → AI 判定详情（可折叠）。
-        低频操作（进度存取 / 新一轮 / 导出 / 重置）收进「⋯ 更多」浮层。
+        自上而下：工具条 -> 状态行 -> 判定卡 -> 单词卡 -> 正确答案卡
+        -> 输入行 -> AI 判定详情（可折叠）。
+        低频操作（进度存取 / 新一轮 / 导出 / 重置）收进「更多」浮层。
         """
         parent.columnconfigure(0, weight=1)
         parent.rowconfigure(0, weight=1)
@@ -1021,7 +1021,7 @@ class CSVLearningApp:
         self.btn_shuffle.grid(row=0, column=3, padx=(0, 6))
         self._bind_hint(self.btn_shuffle, "重新打乱题目顺序（保留已答题与统计）")
 
-        self.btn_more = self._pill(bar, "⋯", self._toggle_more_menu, width=34)
+        self.btn_more = self._pill(bar, "更多", self._toggle_more_menu, width=48)
         self.btn_more.grid(row=0, column=4)
         self._bind_hint(self.btn_more, "更多操作")
 
@@ -1146,7 +1146,7 @@ class CSVLearningApp:
         self.entry_hint.place(relx=0.0, rely=0.5, x=14, anchor="w")
         self.entry_hint.bind('<Button-1>', lambda e: self.answer_entry.focus_set())
         self.answer_var.trace_add("write", lambda *a: self._sync_entry_hint())
-        # 焦点离开输入框 → 结束「正在输入」状态，内容为空则恢复提示层
+        # 焦点离开输入框 -> 结束「正在输入」状态，内容为空则恢复提示层
         self.answer_entry.bind(
             '<FocusOut>', lambda e: self.root.after(60, self._on_entry_focus_out), add='+')
         # IME 组词区间：Tk 8.6 用这两个虚拟事件标记（见 tk8.6/entry.tcl）。
@@ -1181,7 +1181,7 @@ class CSVLearningApp:
         self.btn_detail.grid(row=0, column=0, sticky=tk.W, padx=10, pady=6)
 
         self.detail_arrow = ctk.CTkLabel(
-            self.detail_frame, text="▾", width=20,
+            self.detail_frame, text="展开", width=44,
             font=ctk.CTkFont(family='Microsoft YaHei UI', size=12), text_color="#8b95a3")
         self.detail_arrow.grid(row=0, column=1, sticky=tk.E, padx=(0, 12))
         self.detail_arrow.bind("<Button-1>", lambda e: self._toggle_detail())
@@ -1255,7 +1255,7 @@ class CSVLearningApp:
         except Exception:
             pass
         try:
-            self.ai_result_text.insert(tk.END, f"\n💡 正确答案: {clean_display}\n")
+            self.ai_result_text.insert(tk.END, f"\n正确答案: {clean_display}\n")
             self.ai_result_text.see(tk.END)
         except Exception:
             pass
@@ -1285,7 +1285,7 @@ class CSVLearningApp:
             pass
 
     def _toggle_shuffle_enabled(self):
-        """「⋯ 更多 → 乱序出题」：控制加载 CSV / 新一轮复习时是否自动打乱。"""
+        """「更多 -> 乱序出题」：控制加载 CSV / 新一轮复习时是否自动打乱。"""
         enabled = not bool(getattr(self.ai_assistant, 'shuffle_enabled', True))
         try:
             self.ai_assistant.set_shuffle_enabled(enabled)
@@ -1295,7 +1295,7 @@ class CSVLearningApp:
         state = "开启" if enabled else "关闭"
         try:
             self.ai_result_text.insert(
-                tk.END, f"\n🔀 乱序出题已{state}（下次加载 CSV 或开始新一轮复习时生效）\n")
+                tk.END, f"\n乱序出题已{state}（下次加载 CSV 或开始新一轮复习时生效）\n")
             self.ai_result_text.see(tk.END)
         except Exception:
             pass
@@ -1326,16 +1326,16 @@ class CSVLearningApp:
         self.update_progress()
         try:
             self.ai_result_text.insert(
-                tk.END, f"\n🔀 已重新打乱第 {start + 1}～{len(self.current_csv_data)} 题"
+                tk.END, f"\n已重新打乱第 {start + 1}～{len(self.current_csv_data)} 题"
                         f"（共 {remaining} 题），已答题与统计不变\n")
             self.ai_result_text.see(tk.END)
-            self.btn_shuffle.configure(text="✓")
+            self.btn_shuffle.configure(text="完成")
             self.root.after(900, lambda: self.btn_shuffle.configure(text="打乱"))
         except Exception:
             pass
 
     # ==========================================================
-    # 「⋯ 更多」浮层
+    # 「更多」浮层
     # ==========================================================
 
     def _build_more_menu(self):
@@ -1353,7 +1353,7 @@ class CSVLearningApp:
                      text_color="#8b95a3").grid(row=0, column=0, sticky="w")
 
         btn_close = ctk.CTkButton(
-            head, text="✕", command=self._close_more_menu, width=24, height=22,
+            head, text="关闭", command=self._close_more_menu, width=48, height=22,
             corner_radius=6, fg_color="transparent", hover_color="#3b424f",
             text_color="#8b95a3",
             font=ctk.CTkFont(family='Microsoft YaHei UI', size=12))
@@ -1420,7 +1420,7 @@ class CSVLearningApp:
             pass
 
     def _on_global_right(self, event=None):
-        """方向键 → 下一题。
+        """方向键 -> 下一题。
 
         - 本题已判定：直接翻页（不重复计分）
         - 本题未作答且答案框为空：等同「跳过」按钮，计入错题后翻页
@@ -1454,11 +1454,11 @@ class CSVLearningApp:
         return "break"
 
     def _on_global_escape(self, event=None):
-        """Esc 关闭「⋯ 更多」浮层。"""
+        """Esc 关闭「更多」浮层。"""
         self._close_more_menu()
 
     def _on_global_click(self, event):
-        """点击浮层外部时关闭「⋯ 更多」浮层。"""
+        """点击浮层外部时关闭「更多」浮层。"""
         menu = getattr(self, "_more_menu", None)
         if menu is None:
             return
@@ -1502,10 +1502,10 @@ class CSVLearningApp:
         try:
             if expanded:
                 self.ai_frame.grid()
-                self.detail_arrow.configure(text="▴")
+                self.detail_arrow.configure(text="收起")
             else:
                 self.ai_frame.grid_remove()
-                self.detail_arrow.configure(text="▾")
+                self.detail_arrow.configure(text="展开")
         except Exception:
             pass
 
@@ -1516,7 +1516,7 @@ class CSVLearningApp:
     def _submit_current(self, event=None):
         """提交按钮与回车的统一入口。
 
-        未判定 → 提交作答；已判定 → 进入下一题。
+        未判定 -> 提交作答；已判定 -> 进入下一题。
 
         注意：作为 Entry 的 '<Return>' 绑定回调时，Tkinter 会传入 event 对象，
         因此这里必须允许额外位置参数；返回 "break" 可阻止默认的蜂鸣行为。
@@ -1611,8 +1611,8 @@ class CSVLearningApp:
         提示层是叠在 Entry 之上的独立 Label，IME 组词串正好画在光标处
         （输入框最左侧），两者一旦同时存在就会互相遮挡。
         判定依据有两个：
-          - answer_var（StringVar）非空 → 有真实内容，隐藏
-          - _entry_typing 为真 → 正在打字 / IME 组词中，隐藏
+          - answer_var（StringVar）非空 -> 有真实内容，隐藏
+          - _entry_typing 为真 -> 正在打字 / IME 组词中，隐藏
         """
         hint = getattr(self, "entry_hint", None)
         if hint is None:
@@ -1642,8 +1642,8 @@ class CSVLearningApp:
     def _set_entry_typing(self, flag):
         """设置「本轮是否正在输入」，并同步提示层显隐。
 
-        True  → 隐藏提示层（正在打字 / IME 组词中）
-        False → 内容为空时重新显示提示层
+        True  -> 隐藏提示层（正在打字 / IME 组词中）
+        False -> 内容为空时重新显示提示层
         """
         self._entry_typing = bool(flag)
         self._sync_entry_hint()
@@ -1692,7 +1692,7 @@ class CSVLearningApp:
         self._question_size_cache["key"] = cache_key
 
         # 宽度基准取外层容器，而不是单词卡自身：
-        # 单词卡会跟着文字变宽，若拿卡宽当基准，字号不减 → 越算越宽，
+        # 单词卡会跟着文字变宽，若拿卡宽当基准，字号不减 -> 越算越宽，
         # 最终把内容顶出窗口（实测 apple 就把卡片撑到 1400px）。
         wrap = getattr(self, "main_wrap", None)
         base_w = wrap.winfo_width() if wrap is not None else card_w
@@ -1749,7 +1749,7 @@ class CSVLearningApp:
             font=ctk.CTkFont(family='Microsoft YaHei UI', size=14, weight='bold'),
             text_color="#f0f3f7").grid(row=0, column=0, sticky=tk.W)
 
-        self.btn_back = self._pill(bar, "← 学习", self._goto_learning, width=58)
+        self.btn_back = self._pill(bar, "返回学习", self._goto_learning, width=80)
         self.btn_back.grid(row=0, column=1)
         self._bind_hint(self.btn_back, "返回学习页")
         self._register_font('btn_back', 'Microsoft YaHei UI', 12)
@@ -1990,16 +1990,16 @@ class CSVLearningApp:
         self.ollama_status_label.configure(text="状态: 检测中...", text_color="#f39c12")
 
         if self.ai_assistant._check_ollama_http():
-            self.ollama_status_label.configure(text=f"状态: ✅ 已连接 ({url})", text_color="#2ecc71")
+            self.ollama_status_label.configure(text=f"状态: 已连接 ({url})", text_color="#2ecc71")
             self.refresh_ollama_models()
             return
 
         exe = self.ai_assistant.find_ollama_executable()
         if not exe:
-            self.ollama_status_label.configure(text="状态: ❌ 未找到 Ollama 程序", text_color="#e74c3c")
+            self.ollama_status_label.configure(text="状态: 未找到 Ollama 程序", text_color="#e74c3c")
             return
 
-        self.ollama_status_label.configure(text="状态: 🦙 尝试自动启动 Ollama...", text_color="#f39c12")
+        self.ollama_status_label.configure(text="状态: 尝试自动启动 Ollama...", text_color="#f39c12")
 
         def worker():
             started = self.ai_assistant.start_ollama()
@@ -2010,13 +2010,13 @@ class CSVLearningApp:
                         self.root.after(0, lambda: self._ollama_conn_success(url))
                         return
             self.root.after(0, lambda: self.ollama_status_label.configure(
-                text=f"状态: ❌ 自动启动超时 ({url})", text_color="#e74c3c"
+                text=f"状态: 自动启动超时 ({url})", text_color="#e74c3c"
             ))
 
         threading.Thread(target=worker, daemon=True).start()
 
     def _ollama_conn_success(self, url):
-        self.ollama_status_label.configure(text=f"状态: ✅ 已连接 ({url})", text_color="#2ecc71")
+        self.ollama_status_label.configure(text=f"状态: 已连接 ({url})", text_color="#2ecc71")
         self.refresh_ollama_models()
 
     def refresh_ollama_models(self):
@@ -2027,11 +2027,11 @@ class CSVLearningApp:
                 default = 'qwen2.5:7b' if 'qwen2.5:7b' in models else models[0]
                 self.model_combo.set(default)
             
-            self.ollama_status_label.configure(text=f"状态: ✅ 已连接 - 找到 {len(models)} 个模型", text_color="#2ecc71")
+            self.ollama_status_label.configure(text=f"状态: 已连接 - 找到 {len(models)} 个模型", text_color="#2ecc71")
         else:
             self.model_combo.configure(values=[])
             self.model_combo.set("")
-            self.ollama_status_label.configure(text="状态: ⚠️ 已连接但未找到模型，请先下载模型", text_color="#f39c12")
+            self.ollama_status_label.configure(text="状态: 已连接但未找到模型，请先下载模型", text_color="#f39c12")
 
     def save_ai_settings(self):
         ollama_url = self.ollama_url_entry.get().strip()
@@ -2139,15 +2139,15 @@ class CSVLearningApp:
         self.ai_result_text.delete(1.0, tk.END)
 
         if len(loaded_files) == 1:
-            self.ai_result_text.insert(tk.END, f"✅ 成功加载 {self.total_questions} 条记录\n")
+            self.ai_result_text.insert(tk.END, f"成功加载 {self.total_questions} 条记录\n")
         else:
-            self.ai_result_text.insert(tk.END, f"✅ 成功合并 {len(loaded_files)} 个文件，共 {self.total_questions} 条记录\n")
+            self.ai_result_text.insert(tk.END, f"成功合并 {len(loaded_files)} 个文件，共 {self.total_questions} 条记录\n")
             for fp in loaded_files:
-                self.ai_result_text.insert(tk.END, f"   📄 {os.path.basename(fp)}\n")
+                self.ai_result_text.insert(tk.END, f"   {os.path.basename(fp)}\n")
         if shuffled:
-            self.ai_result_text.insert(tk.END, "🔀 已打乱题目顺序（「⋯ 更多 → 乱序出题」可关闭）\n")
+            self.ai_result_text.insert(tk.END, "已打乱题目顺序（「更多 -> 乱序出题」可关闭）\n")
         if skipped:
-            self.ai_result_text.insert(tk.END, f"\n⚠️ 跳过 {len(skipped)} 个文件:\n")
+            self.ai_result_text.insert(tk.END, f"\n跳过 {len(skipped)} 个文件:\n")
             for s in skipped:
                 self.ai_result_text.insert(tk.END, f"   ⨯ {s}\n")
         self.ai_result_text.insert(tk.END, f"\n准备开始第 {self.current_round} 轮学习...\n\n")
@@ -2158,20 +2158,20 @@ class CSVLearningApp:
             if provider == 'ollama':
                 if self.ai_assistant._check_ollama_http():
                     model_info = f" ({self.ai_assistant.model})" if self.ai_assistant.model else ""
-                    self.ai_result_text.insert(tk.END, f"🦙 使用Ollama本地AI{model_info}\n")
+                    self.ai_result_text.insert(tk.END, f"使用Ollama本地AI{model_info}\n")
                     self.ai_result_text.insert(tk.END, "   完全免费、隐私安全、无需联网\n")
                 else:
-                    self.ai_result_text.insert(tk.END, "🦙 Ollama 未运行，正在尝试自动启动...\n")
+                    self.ai_result_text.insert(tk.END, "Ollama 未运行，正在尝试自动启动...\n")
                     self._ensure_ollama_running_async(silent=False)
             elif provider != 'local':
                 providers = self.ai_assistant.get_available_providers()
                 provider_name = providers.get(provider, {}).get('name', 'AI')
                 model_info = f" ({self.ai_assistant.model})" if self.ai_assistant.model else ""
-                self.ai_result_text.insert(tk.END, f"🤖 使用{provider_name}{model_info}\n")
+                self.ai_result_text.insert(tk.END, f"使用{provider_name}{model_info}\n")
             else:
-                self.ai_result_text.insert(tk.END, "⚙️ 使用本地相似度算法\n")
+                self.ai_result_text.insert(tk.END, "使用本地相似度算法\n")
         else:
-            self.ai_result_text.insert(tk.END, "⚙️ AI功能已禁用，使用本地算法\n")
+            self.ai_result_text.insert(tk.END, "AI功能已禁用，使用本地算法\n")
 
         self.ai_result_text.insert(tk.END, "\n" + "="*75 + "\n\n")
 
@@ -2214,14 +2214,14 @@ class CSVLearningApp:
                 json.dump(progress_data, f, ensure_ascii=False, indent=2)
 
             info_text = (
-                f"✅ 学习进度已成功保存！\n\n"
-                f"📅 保存时间: {progress_data['save_time']}\n"
-                f"📚 CSV 文件: {progress_data['csv_file_name']}\n"
-                f"📍 当前进度: 第 {progress_data['current_index'] + 1} / {progress_data['total_questions']} 题\n"
-                f"🔁 当前轮次: 第 {progress_data['current_round']} 轮\n"
-                f"📈 正确: {progress_data['correct_count']} | 错误: {progress_data['wrong_count']}\n"
-                f"📝 错题数: {len(progress_data['wrong_answers'])}\n\n"
-                f"💾 文件名: {os.path.basename(file_path)}"
+                f"学习进度已成功保存！\n\n"
+                f"保存时间: {progress_data['save_time']}\n"
+                f"CSV 文件: {progress_data['csv_file_name']}\n"
+                f"当前进度: 第 {progress_data['current_index'] + 1} / {progress_data['total_questions']} 题\n"
+                f"当前轮次: 第 {progress_data['current_round']} 轮\n"
+                f"正确: {progress_data['correct_count']} | 错误: {progress_data['wrong_count']}\n"
+                f"错题数: {len(progress_data['wrong_answers'])}\n\n"
+                f"文件名: {os.path.basename(file_path)}"
             )
             self.ai_result_text.insert(tk.END, f"\n{'='*75}\n{info_text}\n{'='*75}\n\n")
             self.ai_result_text.see(tk.END)
@@ -2329,14 +2329,14 @@ class CSVLearningApp:
             else:
                 csv_display = "（无关联CSV）"
             info_text = (
-                f"✅ 学习进度已成功恢复！\n\n"
-                f"📅 进度保存时间: {save_time}\n"
-                f"📚 CSV 文件: {csv_display}\n"
-                f"📍 当前进度: 第 {self.current_index + 1} / {self.total_questions} 题\n"
-                f"🔁 当前轮次: 第 {self.current_round} 轮\n"
-                f"📈 正确: {self.correct_count} | 错误: {self.wrong_count}\n"
-                f"📝 错题数: {len(self.wrong_answers)}\n\n"
-                f"🎯 继续从第 {self.current_index + 1} 题开始学习吧！"
+                f"学习进度已成功恢复！\n\n"
+                f"进度保存时间: {save_time}\n"
+                f"CSV 文件: {csv_display}\n"
+                f"当前进度: 第 {self.current_index + 1} / {self.total_questions} 题\n"
+                f"当前轮次: 第 {self.current_round} 轮\n"
+                f"正确: {self.correct_count} | 错误: {self.wrong_count}\n"
+                f"错题数: {len(self.wrong_answers)}\n\n"
+                f"继续从第 {self.current_index + 1} 题开始学习吧！"
             )
             self.ai_result_text.insert(tk.END, f"\n{'='*75}\n{info_text}\n{'='*75}\n\n")
             self.ai_result_text.see(tk.END)
@@ -2387,8 +2387,8 @@ class CSVLearningApp:
     def submit_answer(self, user_answer=None):
         """提交当前作答。
 
-        user_answer=None → 读输入框文本（老逻辑）。
-        传入文本 → 直接判定，不经过输入框。
+        user_answer=None -> 读输入框文本（老逻辑）。
+        传入文本 -> 直接判定，不经过输入框。
         返回 True=已发起判定；False=未提交（处理中/无题/空答案）。
         """
         if self.processing:
@@ -2437,21 +2437,21 @@ class CSVLearningApp:
             self.ai_assistant._last_correct_answer = correct_answer
 
             if self.ai_assistant.ai_provider == 'ollama' and not self.ai_assistant._check_ollama_http():
-                self.root.after(0, lambda: self.ai_result_text.insert(tk.END, "🦙 Ollama 未运行，正在后台启动...\n") or self.ai_result_text.see(tk.END))
+                self.root.after(0, lambda: self.ai_result_text.insert(tk.END, "Ollama 未运行，正在后台启动...\n") or self.ai_result_text.see(tk.END))
                 started = self.ai_assistant.start_ollama()
                 if started:
                     for _ in range(30):
                         time.sleep(1)
                         if self.ai_assistant._check_ollama_http():
-                            self.root.after(0, lambda: self.ai_result_text.insert(tk.END, "✅ Ollama 已就绪\n") or self.ai_result_text.see(tk.END))
+                            self.root.after(0, lambda: self.ai_result_text.insert(tk.END, "Ollama 已就绪\n") or self.ai_result_text.see(tk.END))
                             break
                     else:
-                        self.root.after(0, lambda: self.ai_result_text.insert(tk.END, "⚠️ Ollama 启动超时，改用本地算法\n") or self.ai_result_text.see(tk.END))
+                        self.root.after(0, lambda: self.ai_result_text.insert(tk.END, "Ollama 启动超时，改用本地算法\n") or self.ai_result_text.see(tk.END))
                         self.root.after(0, lambda: self.update_ai_status())
                         self.root.after(0, lambda: self.submit_local(user_answer, correct_answer, col1, col2))
                         return
                 else:
-                    self.root.after(0, lambda: self.ai_result_text.insert(tk.END, "⚠️ 未找到 Ollama，改用本地算法\n") or self.ai_result_text.see(tk.END))
+                    self.root.after(0, lambda: self.ai_result_text.insert(tk.END, "未找到 Ollama，改用本地算法\n") or self.ai_result_text.see(tk.END))
                     self.root.after(0, lambda: self.update_ai_status())
                     self.root.after(0, lambda: self.submit_local(user_answer, correct_answer, col1, col2))
                     return
@@ -2487,7 +2487,7 @@ class CSVLearningApp:
             clean_answer = re.sub(r'\s+', '', strip_parentheses(answer, self.ai_assistant).lower())
             
             if user_clean == clean_answer:
-                return True, 1.0, f"✨ 完美！回答完全正确！"
+                return True, 1.0, f"完美！回答完全正确！"
             
             sequence_matcher = difflib.SequenceMatcher(None, user_clean, clean_answer)
             similarity = sequence_matcher.ratio()
@@ -2498,13 +2498,13 @@ class CSVLearningApp:
         
         clean_best_match = strip_parentheses(best_match, self.ai_assistant)
         if best_similarity >= 0.9:
-            return True, best_similarity, f"✅ 基本正确！与标准答案\"{clean_best_match}\"高度相似（可能是同义词、不同表达或格式差异）"
+            return True, best_similarity, f"基本正确！与标准答案\"{clean_best_match}\"高度相似（可能是同义词、不同表达或格式差异）"
         elif best_similarity >= 0.7:
-            return False, best_similarity, f"⚠️ 部分正确，与标准答案\"{clean_best_match}\"存在明显差异\n建议：检查词性是否匹配，确认词汇的准确含义"
+            return False, best_similarity, f"部分正确，与标准答案\"{clean_best_match}\"存在明显差异\n建议：检查词性是否匹配，确认词汇的准确含义"
         elif best_similarity >= 0.4:
-            return False, best_similarity, f"❌ 相似度较低，标准答案是：{clean_best_match}\n可能混淆了词义或词性，建议重新学习该单词"
+            return False, best_similarity, f"相似度较低，标准答案是：{clean_best_match}\n可能混淆了词义或词性，建议重新学习该单词"
         else:
-            return False, best_similarity, f"❌ 答案差异较大，标准答案：{clean_best_match}\n💡 建议：回顾单词的基本含义和用法"
+            return False, best_similarity, f"答案差异较大，标准答案：{clean_best_match}\n建议：回顾单词的基本含义和用法"
 
     def display_ai_result(self, user_answer, correct_answer, col1, col2, ai_result):
         try:
@@ -2526,17 +2526,17 @@ class CSVLearningApp:
             provider = self.ai_assistant.ai_provider
             
             if provider == 'ollama':
-                mode = "🦙 Ollama (本地)"
+                mode = "Ollama (本地)"
             elif provider != 'local' and self.ai_assistant.use_ai:
-                mode = f"🤖 {providers.get(provider, {}).get('name', 'AI')}"
+                mode = f"{providers.get(provider, {}).get('name', 'AI')}"
             else:
-                mode = "⚙️ 本地算法"
+                mode = "本地算法"
 
             clean_correct_display = clean_answer_string(correct_answer, self.ai_assistant)
             if is_correct:
-                result_text = f"\n{'='*80}\n📚 第{self.current_index+1}题 [{mode}]\n{'='*80}\n{col1} ({col2})\n你的答案: {user_answer}\n\n正确\n{'='*80}\n\n"
+                result_text = f"\n{'='*80}\n第{self.current_index+1}题 [{mode}]\n{'='*80}\n{col1} ({col2})\n你的答案: {user_answer}\n\n正确\n{'='*80}\n\n"
             else:
-                result_text = f"\n{'='*80}\n📚 第{self.current_index+1}题 [{mode}]\n{'='*80}\n{col1} ({col2})\n你的答案: {user_answer}\n\n错误，正确答案：{clean_correct_display}\n{'='*80}\n\n"
+                result_text = f"\n{'='*80}\n第{self.current_index+1}题 [{mode}]\n{'='*80}\n{col1} ({col2})\n你的答案: {user_answer}\n\n错误，正确答案：{clean_correct_display}\n{'='*80}\n\n"
 
             self.ai_result_text.insert(tk.END, result_text)
             self.ai_result_text.see(tk.END)
@@ -2561,7 +2561,7 @@ class CSVLearningApp:
 
             self.update_progress()
             # 判定结果和正确答案需要停留给用户看，否则刚刷新出来就被下一题覆盖。
-            # 用户再次回车 / 点提交 / 按 → 时手动前进。
+            # 用户再次回车 / 点提交 / 按右方向键时手动前进。
             self._refresh_verdict()
             try:
                 self.answer_entry.focus_set()
@@ -2601,12 +2601,12 @@ class CSVLearningApp:
         
         self.last_judgment_info['is_correct'] = True
         
-        result_text = f"\n{'─'*80}\n"
-        result_text += f"📝 ** 手动修改判定 ** 📝\n"
-        result_text += f"✅ 已将此题标记为：正确 ✓\n"
-        result_text += f"📝 单词: {info['col1']} | 词性: {info['col2']}\n"
+        result_text = f"\n{'-'*80}\n"
+        result_text += f"** 手动修改判定 **\n"
+        result_text += f"已将此题标记为：正确\n"
+        result_text += f"单词: {info['col1']} | 词性: {info['col2']}\n"
         result_text += f"你的答案: {info['user_answer']} | 标准答案: {info['correct_answer']}\n"
-        result_text += f"{'─'*80}\n\n"
+        result_text += f"{'-'*80}\n\n"
         
         self.ai_result_text.insert(tk.END, result_text)
         self.ai_result_text.see(tk.END)
@@ -2635,13 +2635,13 @@ class CSVLearningApp:
         
         self.last_judgment_info['is_correct'] = False
         
-        result_text = f"\n{'─'*80}\n"
-        result_text += f"📝 ** 手动修改判定 ** 📝\n"
-        result_text += f"❌ 已将此题标记为：错误 ✗\n"
-        result_text += f"📝 单词: {info['col1']} | 词性: {info['col2']}\n"
+        result_text = f"\n{'-'*80}\n"
+        result_text += f"** 手动修改判定 **\n"
+        result_text += f"已将此题标记为：错误\n"
+        result_text += f"单词: {info['col1']} | 词性: {info['col2']}\n"
         result_text += f"你的答案: {info['user_answer']} | 标准答案: {info['correct_answer']}\n"
         result_text += f"已加入错题本，将在下一轮复习\n"
-        result_text += f"{'─'*80}\n\n"
+        result_text += f"{'-'*80}\n\n"
         
         self.ai_result_text.insert(tk.END, result_text)
         self.ai_result_text.see(tk.END)
@@ -2659,26 +2659,26 @@ class CSVLearningApp:
         accuracy = (self.correct_count / self.total_questions * 100) if self.total_questions > 0 else 0
         
         result_text = f"\n{'='*80}\n"
-        result_text += f"🎉 第 {self.current_round} 轮完成！\n"
+        result_text += f"第 {self.current_round} 轮完成！\n"
         result_text += f"{'='*80}\n\n"
-        result_text += f"📊 学习统计:\n"
+        result_text += f"学习统计:\n"
         result_text += f"   • 总题数: {self.total_questions}\n"
         result_text += f"   • 正确数: {self.correct_count}\n"
         result_text += f"   • 错误数: {self.wrong_count}\n"
         result_text += f"   • 正确率: {accuracy:.1f}%\n\n"
 
         if self.wrong_answers:
-            result_text += f"⚠️ 有 {len(self.wrong_answers)} 道错题需要复习\n"
-            result_text += f"💪 点击'开始新一轮复习'继续巩固学习！\n"
+            result_text += f"有 {len(self.wrong_answers)} 道错题需要复习\n"
+            result_text += f"点击'开始新一轮复习'继续巩固学习！\n"
         else:
-            result_text += f"🌟 太棒了！全部答对！你已经掌握了所有内容！\n"
+            result_text += f"太棒了！全部答对！你已经掌握了所有内容！\n"
 
         result_text += f"\n{'='*80}\n\n"
 
         self.ai_result_text.insert(tk.END, result_text)
         self.ai_result_text.see(tk.END)
 
-        self.col1_value.configure(text="🎊 本轮完成!")
+        self.col1_value.configure(text="本轮完成!")
         self.col2_value.configure(text="")
         self._clear_entry(self.answer_entry)
         self._refresh_verdict()
@@ -2686,7 +2686,7 @@ class CSVLearningApp:
 
     def start_new_round(self):
         if not self.wrong_answers:
-            messagebox.showinfo("提示", "没有错题需要复习！\n\n太棒了！你已经掌握了所有内容！🎉")
+            messagebox.showinfo("提示", "没有错题需要复习！\n\n太棒了！你已经掌握了所有内容！")
             return
 
         original_wrong = [row[:3] for row in self.wrong_answers]
@@ -2705,12 +2705,12 @@ class CSVLearningApp:
         self.display_current_question()
 
         result_text = f"\n{'='*80}\n"
-        result_text += f"🔄 开始第 {self.current_round} 轮复习\n"
+        result_text += f"开始第 {self.current_round} 轮复习\n"
         result_text += f"{'='*80}\n\n"
-        result_text += f"📚 本轮题目数: {self.total_questions}\n"
-        result_text += f"🎯 目标: 掌握所有错题！\n"
+        result_text += f"本轮题目数: {self.total_questions}\n"
+        result_text += f"目标: 掌握所有错题！\n"
         if shuffled:
-            result_text += f"🔀 错题顺序已打乱\n"
+            result_text += f"错题顺序已打乱\n"
         result_text += f"\n"
         self.ai_result_text.insert(tk.END, result_text)
         self.ai_result_text.see(tk.END)
@@ -2736,7 +2736,7 @@ class CSVLearningApp:
                     for row in self.wrong_answers:
                         writer.writerow(row[:3])
 
-                messagebox.showinfo("成功", f"✅ 错题本已导出到:\n\n{save_path}\n\n共 {len(self.wrong_answers)} 条记录\n（格式与输入CSV一致，可直接重新加载学习）")
+                messagebox.showinfo("成功", f"错题本已导出到:\n\n{save_path}\n\n共 {len(self.wrong_answers)} 条记录\n（格式与输入CSV一致，可直接重新加载学习）")
             except Exception as e:
                 messagebox.showerror("错误", f"导出失败: {str(e)}")
 
@@ -2765,19 +2765,19 @@ class CSVLearningApp:
             try:
                 header = []
                 header.append("=" * 72)
-                header.append("📚 CSV词汇学习工具 - AI判定日志导出")
+                header.append("CSV词汇学习工具 - AI判定日志导出")
                 header.append("=" * 72)
-                header.append(f"🕒 导出时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-                header.append(f"📂 CSV文件: {self.csv_file_path or (f'{len(self.csv_file_paths)}个文件合并' if getattr(self, 'csv_file_paths', None) else '（未加载）')}")
-                header.append(f"🔁 当前轮次: {self.current_round}")
-                header.append(f"📊 当前进度: 第 {self.current_index + (1 if self.current_index > 0 else 0)} / {self.total_questions} 题")
-                header.append(f"✅ 正确数: {self.correct_count}    ❌ 错误数: {self.wrong_count}")
+                header.append(f"导出时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                header.append(f"CSV文件: {self.csv_file_path or (f'{len(self.csv_file_paths)}个文件合并' if getattr(self, 'csv_file_paths', None) else '（未加载）')}")
+                header.append(f"当前轮次: {self.current_round}")
+                header.append(f"当前进度: 第 {self.current_index + (1 if self.current_index > 0 else 0)} / {self.total_questions} 题")
+                header.append(f"正确数: {self.correct_count}    错误数: {self.wrong_count}")
                 if self.correct_count + self.wrong_count > 0:
                     rate = self.correct_count / (self.correct_count + self.wrong_count) * 100
-                    header.append(f"🎯 正确率: {rate:.1f}%")
-                header.append(f"🦙 AI提供商: {self.ai_assistant.ai_provider}")
-                header.append(f"🤖 模型: {self.ai_assistant.model}")
-                header.append(f"🧹 括号清理: {'已开启' if self.ai_assistant.clean_parentheses else '已关闭'}")
+                    header.append(f"正确率: {rate:.1f}%")
+                header.append(f"AI提供商: {self.ai_assistant.ai_provider}")
+                header.append(f"模型: {self.ai_assistant.model}")
+                header.append(f"括号清理: {'已开启' if self.ai_assistant.clean_parentheses else '已关闭'}")
                 header.append("=" * 72)
                 header.append("")
                 header.append("")
@@ -2790,10 +2790,10 @@ class CSVLearningApp:
                 size_kb = os.path.getsize(save_path) / 1024
                 messagebox.showinfo(
                     "成功",
-                    f"✅ AI判定日志已导出到:\n\n{save_path}\n\n"
-                    f"📝 日志大小: {size_kb:.1f} KB\n"
-                    f"🔁 当前轮次: 第 {self.current_round} 轮\n"
-                    f"🎯 进度: {self.correct_count}✅ / {self.wrong_count}❌"
+                    f"AI判定日志已导出到:\n\n{save_path}\n\n"
+                    f"日志大小: {size_kb:.1f} KB\n"
+                    f"当前轮次: 第 {self.current_round} 轮\n"
+                    f"进度: {self.correct_count} / {self.wrong_count}"
                 )
             except Exception as e:
                 messagebox.showerror("错误", f"导出AI日志失败: {str(e)}")

@@ -183,7 +183,7 @@ class OllamaAILearningAssistant:
 
     def get_available_providers(self):
         providers = {
-            'ollama': {'name': '🦙 Ollama (本地)', 'models': [], 'desc': '完全本地，免费无限用'},
+            'ollama': {'name': 'Ollama (本地)', 'models': [], 'desc': '完全本地，免费无限用'},
             'local': {'name': '本地算法', 'models': [], 'desc': '无需网络，快速响应'},
         }
 
@@ -196,20 +196,20 @@ class OllamaAILearningAssistant:
 
         if HAS_DASHSCOPE:
             providers['qwen'] = {
-                'name': '🇨🇳 通义千问 (阿里)',
+                'name': '通义千问 (阿里)',
                 'models': ['qwen-turbo', 'qwen-plus', 'qwen-max', 'qwen-max-longcontext'],
                 'desc': '阿里云大模型'
             }
 
         if HAS_ZHIPU:
             providers['zhipu'] = {
-                'name': '🇨🇳 智谱GLM',
+                'name': '智谱GLM',
                 'models': ['glm-4', 'glm-4-flash', 'glm-4-plus'],
                 'desc': '清华智谱AI'
             }
 
         providers['baidu'] = {
-            'name': '🇨🇳 文心一言 (百度)',
+            'name': '文心一言 (百度)',
             'models': ['ernie-bot-4', 'ernie-bot', 'ernie-bot-turbo'],
             'desc': '百度文心大模型'
         }
@@ -257,7 +257,7 @@ class OllamaAILearningAssistant:
             return {
                 'is_correct': is_correct,
                 'confidence': best_sim,
-                'analysis': f'AI异常，本地判定{"✅对" if is_correct else "❌错"} (相似度{best_sim:.0%})',
+                'analysis': f'AI异常，本地判定{"对" if is_correct else "错"} (相似度{best_sim:.0%})',
                 'suggestions': f'标准答案：{clean_best}' if not is_correct else '',
                 'similarity_score': best_sim
             }
@@ -269,11 +269,11 @@ class OllamaAILearningAssistant:
 错误只返回：错误，正确答案是：XXX
 
 例子：
-标准: 苹果 | 答: 苹果 → 正确，正确答案是：苹果
-标准: 跑;奔跑 | 答: 奔跑 → 正确，正确答案是：跑;奔跑
-标准: 高兴的 | 答: 高兴 → 错误，正确答案是：高兴的
-标准: 吃 | 答: 食物 → 错误，正确答案是：吃
-标准: 橙子;柑橘 | 答: 橘子 → 正确，正确答案是：橙子;柑橘
+标准: 苹果 | 答: 苹果 -> 正确，正确答案是：苹果
+标准: 跑;奔跑 | 答: 奔跑 -> 正确，正确答案是：跑;奔跑
+标准: 高兴的 | 答: 高兴 -> 错误，正确答案是：高兴的
+标准: 吃 | 答: 食物 -> 错误，正确答案是：吃
+标准: 橙子;柑橘 | 答: 橘子 -> 正确，正确答案是：橙子;柑橘
 
 题目：{col1} ({col2})
 标准：{clean_correct}
@@ -292,7 +292,7 @@ class OllamaAILearningAssistant:
 
             if cleaned.startswith('正确') or cleaned == '正确':
                 is_correct = True
-                analysis = '✅ AI判定正确'
+                analysis = 'AI判定正确'
             elif cleaned.startswith('错误') or '错误' in cleaned[:10]:
                 is_correct = False
                 m = re.search(r'正确答案[是为：:]*[：:\s]*([^\n。，]+)', cleaned)
@@ -358,7 +358,7 @@ class OllamaAILearningAssistant:
                         rj['is_correct'] = True
                         rj['confidence'] = 1.0
                         rj['similarity_score'] = 1.0
-                        rj['analysis'] = '✅ 完全匹配'
+                        rj['analysis'] = '完全匹配'
                         break
 
             return rj
@@ -376,7 +376,7 @@ class OllamaAILearningAssistant:
                         return {
                             'is_correct': True,
                             'confidence': 1.0,
-                            'analysis': '✅ 正确',
+                            'analysis': '正确',
                             'suggestions': '',
                             'similarity_score': 1.0
                         }
@@ -524,7 +524,7 @@ class OllamaAILearningAssistant:
 class CSVLearningApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("📚 词汇学习默写工具 - 🦙 Ollama AI版")
+        self.root.title("词汇学习默写工具 - Ollama AI版")
         self.geometry("1100x900")
 
         self.current_csv_data = []
@@ -548,7 +548,7 @@ class CSVLearningApp:
         if hasattr(self, 'clean_paren_var') and self.clean_paren_var is not None:
             self.clean_paren_var.set(enabled)
         status = "已开启" if enabled else "已关闭"
-        self.ai_result_text.insert(tk.END, f"🧹 括号清理功能 {status}\n")
+        self.ai_result_text.insert(tk.END, f"括号清理功能 {status}\n")
         self.ai_result_text.see(tk.END)
         self._sync_paren_style_from_state(enabled)
         self._update_paren_tooltip()
@@ -570,9 +570,9 @@ class CSVLearningApp:
             return
         enabled = self.clean_paren_var_main.get() if self.clean_paren_var_main else True
         if enabled:
-            tip = "🧹 已开启：苹果（复数） → 苹果（括号备注不参与判定）"
+            tip = "已开启：苹果（复数） -> 苹果（括号备注不参与判定）"
         else:
-            tip = "📝 已关闭：苹果（复数）原样参与判定（可能导致AI误判）"
+            tip = "已关闭：苹果（复数）原样参与判定（可能导致AI误判）"
         self.paren_check_main.config(text=tip)
         self._sync_paren_style_from_state(enabled)
 
@@ -601,10 +601,10 @@ class CSVLearningApp:
         main_frame.rowconfigure(0, weight=1)
 
         learning_tab = ttk.Frame(notebook, padding="10")
-        notebook.add(learning_tab, text="📚 学习模式")
+        notebook.add(learning_tab, text="学习模式")
 
         settings_tab = ttk.Frame(notebook, padding="10")
-        notebook.add(settings_tab, text="🤖 AI设置 (Ollama)")
+        notebook.add(settings_tab, text="AI设置 (Ollama)")
 
         self.setup_learning_tab(learning_tab)
         self.setup_settings_tab(settings_tab)
@@ -612,16 +612,16 @@ class CSVLearningApp:
         self.update_ai_status()
 
     def setup_learning_tab(self, parent):
-        file_frame = ttk.LabelFrame(parent, text="📁 文件操作", padding="5")
+        file_frame = ttk.LabelFrame(parent, text="文件操作", padding="5")
         file_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
 
         ttk.Button(file_frame, text="选择 CSV 文件", command=self.load_csv).grid(row=0, column=0, padx=3)
-        ttk.Button(file_frame, text="💾 保存进度", command=self.save_progress).grid(row=0, column=1, padx=3)
-        ttk.Button(file_frame, text="📂 读取进度", command=self.load_progress).grid(row=0, column=2, padx=3)
+        ttk.Button(file_frame, text="保存进度", command=self.save_progress).grid(row=0, column=1, padx=3)
+        ttk.Button(file_frame, text="读取进度", command=self.load_progress).grid(row=0, column=2, padx=3)
         self.file_label = ttk.Label(file_frame, text="未选择文件", font=('Microsoft YaHei UI', 9), foreground='#555')
         self.file_label.grid(row=0, column=3, padx=10, sticky=tk.W)
 
-        info_frame = ttk.LabelFrame(parent, text="📊 进度信息", padding="5")
+        info_frame = ttk.LabelFrame(parent, text="进度信息", padding="5")
         info_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
 
         self.round_label = ttk.Label(info_frame, text="轮次: 1", font=('Microsoft YaHei UI', 10, 'bold'))
@@ -630,34 +630,34 @@ class CSVLearningApp:
         self.progress_label.grid(row=0, column=1, padx=10)
         self.stats_label = ttk.Label(info_frame, text="正确: 0 | 错误: 0", font=('Microsoft YaHei UI', 10))
         self.stats_label.grid(row=0, column=2, padx=10)
-        self.ai_status_label = ttk.Label(info_frame, text="🦙 AI: Ollama", font=('Microsoft YaHei UI', 10), foreground='green')
+        self.ai_status_label = ttk.Label(info_frame, text="AI: Ollama", font=('Microsoft YaHei UI', 10), foreground='green')
         self.ai_status_label.grid(row=0, column=3, padx=10)
 
         self.clean_paren_var_main = tk.BooleanVar(value=self.ai_assistant.clean_parentheses)
         self.paren_check_main = ttk.Checkbutton(
             info_frame,
-            text="🧹 忽略括号备注",
+            text="忽略括号备注",
             variable=self.clean_paren_var_main,
             command=self._on_toggle_clean_paren
         )
         self.paren_check_main.grid(row=0, column=4, padx=10)
         self._update_paren_tooltip()
 
-        question_frame = ttk.LabelFrame(parent, text="❓ 当前题目", padding="15")
+        question_frame = ttk.LabelFrame(parent, text="当前题目", padding="15")
         question_frame.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
         parent.rowconfigure(2, weight=1)
 
-        self.col1_label = ttk.Label(question_frame, text="📝 单词:", font=('Microsoft YaHei UI', 12, 'bold'), foreground='#2E86AB')
+        self.col1_label = ttk.Label(question_frame, text="单词:", font=('Microsoft YaHei UI', 12, 'bold'), foreground='#2E86AB')
         self.col1_label.grid(row=0, column=0, sticky=tk.W, pady=8)
         self.col1_value = ttk.Label(question_frame, text="-", font=('Microsoft YaHei UI', 16, 'bold'), wraplength=600, foreground='#1A5276')
         self.col1_value.grid(row=0, column=1, sticky=tk.W, pady=8, padx=10)
 
-        self.col2_label = ttk.Label(question_frame, text="🏷️ 词性:", font=('Microsoft YaHei UI', 12, 'bold'), foreground='#E74C3C')
+        self.col2_label = ttk.Label(question_frame, text="词性:", font=('Microsoft YaHei UI', 12, 'bold'), foreground='#E74C3C')
         self.col2_label.grid(row=1, column=0, sticky=tk.W, pady=8)
         self.col2_value = ttk.Label(question_frame, text="-", font=('Microsoft YaHei UI', 14, 'italic'), wraplength=600, foreground='#C0392B')
         self.col2_value.grid(row=1, column=1, sticky=tk.W, pady=8, padx=10)
 
-        answer_frame = ttk.LabelFrame(parent, text="✍️ 你的答案 (第三列)", padding="15")
+        answer_frame = ttk.LabelFrame(parent, text="你的答案 (第三列)", padding="15")
         answer_frame.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
 
         self.answer_entry = ttk.Entry(answer_frame, font=('Microsoft YaHei UI', 12), width=80)
@@ -671,14 +671,14 @@ class CSVLearningApp:
         style = ttk.Style()
         style.configure('Submit.TButton', font=('Microsoft YaHei UI', 10, 'bold'))
 
-        submit_btn = ttk.Button(button_frame, text="✅ 提交答案", command=self.submit_answer, style='Submit.TButton')
+        submit_btn = ttk.Button(button_frame, text="提交答案", command=self.submit_answer, style='Submit.TButton')
         submit_btn.grid(row=0, column=0, padx=8, pady=5)
 
-        ttk.Button(button_frame, text="⏭️ 跳过此题", command=self.skip_question).grid(row=0, column=1, padx=8, pady=5)
-        ttk.Button(button_frame, text="💡 查看答案", command=self.show_answer).grid(row=0, column=2, padx=8, pady=5)
-        ttk.Button(button_frame, text="➡️ 下一题", command=self.next_question).grid(row=0, column=3, padx=8, pady=5)
+        ttk.Button(button_frame, text="跳过此题", command=self.skip_question).grid(row=0, column=1, padx=8, pady=5)
+        ttk.Button(button_frame, text="查看答案", command=self.show_answer).grid(row=0, column=2, padx=8, pady=5)
+        ttk.Button(button_frame, text="下一题", command=self.next_question).grid(row=0, column=3, padx=8, pady=5)
 
-        ai_frame = ttk.LabelFrame(parent, text="🦙 AI 判定结果 (Ollama 本地智能分析)", padding="10")
+        ai_frame = ttk.LabelFrame(parent, text="AI 判定结果 (Ollama 本地智能分析)", padding="10")
         ai_frame.grid(row=5, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
         parent.rowconfigure(5, weight=2)
 
@@ -689,24 +689,24 @@ class CSVLearningApp:
         manual_judge_frame = ttk.Frame(ai_frame)
         manual_judge_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=5)
 
-        self.btn_mark_correct = ttk.Button(manual_judge_frame, text="✅ 标记为正确", command=self.mark_as_correct)
+        self.btn_mark_correct = ttk.Button(manual_judge_frame, text="标记为正确", command=self.mark_as_correct)
         self.btn_mark_correct.pack(side=tk.LEFT, padx=5)
 
-        self.btn_mark_wrong = ttk.Button(manual_judge_frame, text="❌ 标记为错误", command=self.mark_as_wrong)
+        self.btn_mark_wrong = ttk.Button(manual_judge_frame, text="标记为错误", command=self.mark_as_wrong)
         self.btn_mark_wrong.pack(side=tk.LEFT, padx=5)
 
         self.last_judgment_info = None
 
-        action_frame = ttk.LabelFrame(parent, text="🎯 操作面板", padding="8")
+        action_frame = ttk.LabelFrame(parent, text="操作面板", padding="8")
         action_frame.grid(row=6, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
 
-        ttk.Button(action_frame, text="🔄 开始新一轮复习", command=self.start_new_round).grid(row=0, column=0, padx=6)
-        ttk.Button(action_frame, text="📥 导出错题本", command=self.export_wrong_answers).grid(row=0, column=1, padx=6)
-        ttk.Button(action_frame, text="📤 导出AI判定日志", command=self.export_ai_logs).grid(row=0, column=2, padx=6)
-        ttk.Button(action_frame, text="🗑️ 重置", command=self.reset_app).grid(row=0, column=3, padx=6)
+        ttk.Button(action_frame, text="开始新一轮复习", command=self.start_new_round).grid(row=0, column=0, padx=6)
+        ttk.Button(action_frame, text="导出错题本", command=self.export_wrong_answers).grid(row=0, column=1, padx=6)
+        ttk.Button(action_frame, text="导出AI判定日志", command=self.export_ai_logs).grid(row=0, column=2, padx=6)
+        ttk.Button(action_frame, text="重置", command=self.reset_app).grid(row=0, column=3, padx=6)
 
     def setup_settings_tab(self, parent):
-        provider_frame = ttk.LabelFrame(parent, text="🌐 选择AI服务商", padding="15")
+        provider_frame = ttk.LabelFrame(parent, text="选择AI服务商", padding="15")
         provider_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=10, padx=10)
         parent.columnconfigure(0, weight=1)
 
@@ -723,7 +723,7 @@ class CSVLearningApp:
         self.provider_desc.grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=2)
         self.update_provider_description()
 
-        ollama_frame = ttk.LabelFrame(parent, text="🦙 Ollama 配置 (推荐)", padding="15")
+        ollama_frame = ttk.LabelFrame(parent, text="Ollama 配置 (推荐)", padding="15")
         ollama_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=10, padx=10)
 
         ttk.Label(ollama_frame, text="Ollama服务地址:", font=('Microsoft YaHei UI', 10)).grid(row=0, column=0, sticky=tk.W, pady=5)
@@ -745,7 +745,7 @@ class CSVLearningApp:
 
         self.update_model_list()
 
-        other_api_frame = ttk.LabelFrame(parent, text="🔑 其他AI API密钥 (可选)", padding="15")
+        other_api_frame = ttk.LabelFrame(parent, text="其他AI API密钥 (可选)", padding="15")
         other_api_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=10, padx=10)
 
         ttk.Label(other_api_frame, text="API Key:", font=('Microsoft YaHei UI', 10)).grid(row=0, column=0, sticky=tk.W, pady=5)
@@ -762,15 +762,15 @@ class CSVLearningApp:
         paren_check = ttk.Checkbutton(other_api_frame, text="自动忽略括号说明（推荐开启）\n例：苹果（复数） 等价于 苹果；防止括号内容干扰AI判定", variable=self.clean_paren_var)
         paren_check.grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=(5, 5))
 
-        ttk.Button(other_api_frame, text="💾 保存所有设置", command=self.save_ai_settings).grid(row=3, column=0, columnspan=2, pady=10)
+        ttk.Button(other_api_frame, text="保存所有设置", command=self.save_ai_settings).grid(row=3, column=0, columnspan=2, pady=10)
 
-        install_frame = ttk.LabelFrame(parent, text="📦 安装依赖库", padding="15")
+        install_frame = ttk.LabelFrame(parent, text="安装依赖库", padding="15")
         install_frame.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=10, padx=10)
 
-        status_text = f"Ollama Python库: {'✅ 已安装' if HAS_OLLAMA else '❌ 未安装'}\n"
-        status_text += f"通义千问(dashscope): {'✅ 已安装' if HAS_DASHSCOPE else '❌ 未安装'}\n"
-        status_text += f"智谱AI(zhipuai): {'✅ 已安装' if HAS_ZHIPU else '❌ 未安装'}\n"
-        status_text += f"OpenAI: {'✅ 已安装' if HAS_OPENAI else '❌ 未安装'}"
+        status_text = f"Ollama Python库: {'已安装' if HAS_OLLAMA else '未安装'}\n"
+        status_text += f"通义千问(dashscope): {'已安装' if HAS_DASHSCOPE else '未安装'}\n"
+        status_text += f"智谱AI(zhipuai): {'已安装' if HAS_ZHIPU else '未安装'}\n"
+        status_text += f"OpenAI: {'已安装' if HAS_OPENAI else '未安装'}"
 
         self.install_status = ttk.Label(install_frame, text=status_text, font=('Consolas', 9))
         self.install_status.grid(row=0, column=0, sticky=tk.W, pady=5)
@@ -791,14 +791,14 @@ class CSVLearningApp:
             ttk.Button(btn_frame, text="安装OpenAI", command=lambda: self.install_package('openai')).grid(row=0, column=3, padx=5)
 
         usage_info = """
-🦙 Ollama 使用指南:
+Ollama 使用指南:
 
 【推荐】为什么选Ollama?
-   ✅ 完全免费 - 无需API费用
-   ✅ 完全本地 - 隐私安全
-   ✅ 无限使用 - 不受限制
-   ✅ 中文优秀 - 支持Qwen等中文模型
-   ✅ 离线可用 - 断网也能用
+   完全免费 - 无需API费用
+   完全本地 - 隐私安全
+   无限使用 - 不受限制
+   中文优秀 - 支持Qwen等中文模型
+   离线可用 - 断网也能用
 
 【快速开始】
 1. 安装Ollama: https://ollama.ai
@@ -806,12 +806,12 @@ class CSVLearningApp:
 3. 在本应用中选择Ollama即可！
 
 【推荐模型】
-• qwen2.5:7b - 通义千问2.5 (中文优秀⭐)
+• qwen2.5:7b - 通义千问2.5 (中文优秀)
 • qwen2.5:14b - 更强大的中文能力
 • llama3.2 - Meta最新模型
 • mistral - 欧洲最强开源模型
 
-💡 其他提供商需要API Key和联网！
+其他提供商需要API Key和联网！
 """
         usage_label = ttk.Label(install_frame, text=usage_info, font=('Consolas', 9), justify=tk.LEFT)
         usage_label.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=10)
@@ -826,7 +826,7 @@ class CSVLearningApp:
         if provider in providers:
             desc = providers[provider].get('desc', '')
             name = providers[provider].get('name', provider)
-            self.provider_desc.config(text=f"📍 {name} - {desc}")
+            self.provider_desc.config(text=f"{name} - {desc}")
 
     def update_model_list(self):
         providers = self.ai_assistant.get_available_providers()
@@ -854,10 +854,10 @@ class CSVLearningApp:
         self.root.update()
         
         if self.ai_assistant.check_ollama_running():
-            self.ollama_status_label.config(text=f"状态: ✅ 已连接 ({url})", foreground='green')
+            self.ollama_status_label.config(text=f"状态: 已连接 ({url})", foreground='green')
             self.refresh_ollama_models()
         else:
-            self.ollama_status_label.config(text=f"状态: ❌ 无法连接 ({url})", foreground='red')
+            self.ollama_status_label.config(text=f"状态: 无法连接 ({url})", foreground='red')
 
     def refresh_ollama_models(self):
         models = self.ai_assistant.get_ollama_models()
@@ -870,9 +870,9 @@ class CSVLearningApp:
             providers = self.ai_assistant.get_available_providers()
             providers['ollama']['models'] = sorted(models)
             
-            self.ollama_status_label.config(text=f"状态: ✅ 已连接 - 找到 {len(models)} 个模型", foreground='green')
+            self.ollama_status_label.config(text=f"状态: 已连接 - 找到 {len(models)} 个模型", foreground='green')
         else:
-            self.ollama_status_label.config(text="状态: ⚠️ 已连接但未找到模型，请先下载模型", foreground='orange')
+            self.ollama_status_label.config(text="状态: 已连接但未找到模型，请先下载模型", foreground='orange')
 
     def save_ai_settings(self):
         ollama_url = self.ollama_url_entry.get().strip()
@@ -912,9 +912,9 @@ class CSVLearningApp:
         elif provider == 'ollama':
             if self.ai_assistant.check_ollama_running():
                 model_info = f" ({self.ai_assistant.model})" if self.ai_assistant.model else ""
-                self.ai_status_label.config(text=f"🦙 Ollama{model_info}", foreground='green')
+                self.ai_status_label.config(text=f"Ollama{model_info}", foreground='green')
             else:
-                self.ai_status_label.config(text="🦙 Ollama (未连接)", foreground='orange')
+                self.ai_status_label.config(text="Ollama (未连接)", foreground='orange')
         elif provider == 'local':
             self.ai_status_label.config(text="AI: 本地算法", foreground='gray')
         elif provider in providers:
@@ -970,7 +970,7 @@ class CSVLearningApp:
                 self.display_current_question()
                 self.ai_result_text.delete(1.0, tk.END)
                 
-                self.ai_result_text.insert(tk.END, f"✅ 成功加载 {self.total_questions} 条记录\n")
+                self.ai_result_text.insert(tk.END, f"成功加载 {self.total_questions} 条记录\n")
                 self.ai_result_text.insert(tk.END, f"准备开始第 {self.current_round} 轮学习...\n\n")
                 
                 provider = self.ai_assistant.ai_provider
@@ -979,20 +979,20 @@ class CSVLearningApp:
                     if provider == 'ollama':
                         if self.ai_assistant.check_ollama_running():
                             model_info = f" ({self.ai_assistant.model})" if self.ai_assistant.model else ""
-                            self.ai_result_text.insert(tk.END, f"🦙 使用Ollama本地AI{model_info}\n")
+                            self.ai_result_text.insert(tk.END, f"使用Ollama本地AI{model_info}\n")
                             self.ai_result_text.insert(tk.END, "   完全免费、隐私安全、无需联网\n")
                         else:
-                            self.ai_result_text.insert(tk.END, f"⚠️ Ollama未运行，将使用本地算法\n")
+                            self.ai_result_text.insert(tk.END, f"Ollama未运行，将使用本地算法\n")
                             self.ai_result_text.insert(tk.END, "   请启动Ollama或在'AI设置'中切换\n")
                     elif provider != 'local':
                         providers = self.ai_assistant.get_available_providers()
                         provider_name = providers.get(provider, {}).get('name', 'AI')
                         model_info = f" ({self.ai_assistant.model})" if self.ai_assistant.model else ""
-                        self.ai_result_text.insert(tk.END, f"🤖 使用{provider_name}{model_info}\n")
+                        self.ai_result_text.insert(tk.END, f"使用{provider_name}{model_info}\n")
                     else:
-                        self.ai_result_text.insert(tk.END, f"⚙️ 使用本地相似度算法\n")
+                        self.ai_result_text.insert(tk.END, f"使用本地相似度算法\n")
                 else:
-                    self.ai_result_text.insert(tk.END, f"⚙️ AI功能已禁用，使用本地算法\n")
+                    self.ai_result_text.insert(tk.END, f"AI功能已禁用，使用本地算法\n")
 
                 self.ai_result_text.insert(tk.END, "\n" + "="*75 + "\n\n")
 
@@ -1033,14 +1033,14 @@ class CSVLearningApp:
                 json.dump(progress_data, f, ensure_ascii=False, indent=2)
 
             info_text = (
-                f"✅ 学习进度已成功保存！\n\n"
-                f"📅 保存时间: {progress_data['save_time']}\n"
-                f"📚 CSV 文件: {progress_data['csv_file_name']}\n"
-                f"📍 当前进度: 第 {progress_data['current_index'] + 1} / {progress_data['total_questions']} 题\n"
-                f"🔁 当前轮次: 第 {progress_data['current_round']} 轮\n"
-                f"📈 正确: {progress_data['correct_count']} | 错误: {progress_data['wrong_count']}\n"
-                f"📝 错题数: {len(progress_data['wrong_answers'])}\n\n"
-                f"💾 文件名: {os.path.basename(file_path)}"
+                f"学习进度已成功保存！\n\n"
+                f"保存时间: {progress_data['save_time']}\n"
+                f"CSV 文件: {progress_data['csv_file_name']}\n"
+                f"当前进度: 第 {progress_data['current_index'] + 1} / {progress_data['total_questions']} 题\n"
+                f"当前轮次: 第 {progress_data['current_round']} 轮\n"
+                f"正确: {progress_data['correct_count']} | 错误: {progress_data['wrong_count']}\n"
+                f"错题数: {len(progress_data['wrong_answers'])}\n\n"
+                f"文件名: {os.path.basename(file_path)}"
             )
             self.ai_result_text.insert(tk.END, f"\n{'='*75}\n{info_text}\n{'='*75}\n\n")
             self.ai_result_text.see(tk.END)
@@ -1105,14 +1105,14 @@ class CSVLearningApp:
 
             save_time = data.get("save_time", "未知")
             info_text = (
-                f"✅ 学习进度已成功恢复！\n\n"
-                f"📅 进度保存时间: {save_time}\n"
-                f"📚 CSV 文件: {os.path.basename(csv_path)}\n"
-                f"📍 当前进度: 第 {self.current_index + 1} / {self.total_questions} 题\n"
-                f"🔁 当前轮次: 第 {self.current_round} 轮\n"
-                f"📈 正确: {self.correct_count} | 错误: {self.wrong_count}\n"
-                f"📝 错题数: {len(self.wrong_answers)}\n\n"
-                f"🎯 继续从第 {self.current_index + 1} 题开始学习吧！"
+                f"学习进度已成功恢复！\n\n"
+                f"进度保存时间: {save_time}\n"
+                f"CSV 文件: {os.path.basename(csv_path)}\n"
+                f"当前进度: 第 {self.current_index + 1} / {self.total_questions} 题\n"
+                f"当前轮次: 第 {self.current_round} 轮\n"
+                f"正确: {self.correct_count} | 错误: {self.wrong_count}\n"
+                f"错题数: {len(self.wrong_answers)}\n\n"
+                f"继续从第 {self.current_index + 1} 题开始学习吧！"
             )
             self.ai_result_text.insert(tk.END, f"\n{'='*75}\n{info_text}\n{'='*75}\n\n")
             self.ai_result_text.see(tk.END)
@@ -1205,7 +1205,7 @@ class CSVLearningApp:
             clean_answer = re.sub(r'\s+', '', strip_parentheses(answer, self.ai_assistant).lower())
             
             if user_clean == clean_answer:
-                return True, 1.0, f"✨ 完美！回答完全正确！"
+                return True, 1.0, f"完美！回答完全正确！"
             
             sequence_matcher = difflib.SequenceMatcher(None, user_clean, clean_answer)
             similarity = sequence_matcher.ratio()
@@ -1216,13 +1216,13 @@ class CSVLearningApp:
         
         clean_best_match = strip_parentheses(best_match, self.ai_assistant)
         if best_similarity >= 0.9:
-            return True, best_similarity, f"✅ 基本正确！与标准答案\"{clean_best_match}\"高度相似（可能是同义词、不同表达或格式差异）"
+            return True, best_similarity, f"基本正确！与标准答案\"{clean_best_match}\"高度相似（可能是同义词、不同表达或格式差异）"
         elif best_similarity >= 0.7:
-            return False, best_similarity, f"⚠️ 部分正确，与标准答案\"{clean_best_match}\"存在明显差异\n建议：检查词性是否匹配，确认词汇的准确含义"
+            return False, best_similarity, f"部分正确，与标准答案\"{clean_best_match}\"存在明显差异\n建议：检查词性是否匹配，确认词汇的准确含义"
         elif best_similarity >= 0.4:
-            return False, best_similarity, f"❌ 相似度较低，标准答案是：{clean_best_match}\n可能混淆了词义或词性，建议重新学习该单词"
+            return False, best_similarity, f"相似度较低，标准答案是：{clean_best_match}\n可能混淆了词义或词性，建议重新学习该单词"
         else:
-            return False, best_similarity, f"❌ 答案差异较大，标准答案：{clean_best_match}\n💡 建议：回顾单词的基本含义和用法"
+            return False, best_similarity, f"答案差异较大，标准答案：{clean_best_match}\n建议：回顾单词的基本含义和用法"
 
     def display_ai_result(self, user_answer, correct_answer, col1, col2, ai_result):
         try:
@@ -1243,7 +1243,7 @@ class CSVLearningApp:
                 is_correct = True
                 confidence = 1.0
                 similarity_score = 1.0
-                analysis = '✅ 完全匹配'
+                analysis = '完全匹配'
                 suggestions = ''
             else:
                 is_correct = ai_result['is_correct']
@@ -1256,17 +1256,17 @@ class CSVLearningApp:
             provider = self.ai_assistant.ai_provider
             
             if provider == 'ollama':
-                mode = "🦙 Ollama (本地)"
+                mode = "Ollama (本地)"
             elif provider != 'local' and self.ai_assistant.use_ai:
-                mode = f"🤖 {providers.get(provider, {}).get('name', 'AI')}"
+                mode = f"{providers.get(provider, {}).get('name', 'AI')}"
             else:
-                mode = "⚙️ 本地算法"
+                mode = "本地算法"
 
             clean_correct_display = clean_answer_string(correct_answer, self.ai_assistant)
             if is_correct:
-                result_text = f"\n{'='*80}\n📚 第{self.current_index+1}题 [{mode}]\n{'='*80}\n{col1} ({col2})\n你的答案: {user_answer}\n\n正确\n{'='*80}\n\n"
+                result_text = f"\n{'='*80}\n第{self.current_index+1}题 [{mode}]\n{'='*80}\n{col1} ({col2})\n你的答案: {user_answer}\n\n正确\n{'='*80}\n\n"
             else:
-                result_text = f"\n{'='*80}\n📚 第{self.current_index+1}题 [{mode}]\n{'='*80}\n{col1} ({col2})\n你的答案: {user_answer}\n\n错误，正确答案：{clean_correct_display}\n{'='*80}\n\n"
+                result_text = f"\n{'='*80}\n第{self.current_index+1}题 [{mode}]\n{'='*80}\n{col1} ({col2})\n你的答案: {user_answer}\n\n错误，正确答案：{clean_correct_display}\n{'='*80}\n\n"
 
             self.ai_result_text.insert(tk.END, result_text)
             self.ai_result_text.see(tk.END)
@@ -1299,7 +1299,7 @@ class CSVLearningApp:
         if self.current_csv_data and self.current_index < len(self.current_csv_data):
             correct_answer = self.current_csv_data[self.current_index][2] if len(self.current_csv_data[self.current_index]) > 2 else ""
             clean_display = clean_answer_string(correct_answer, self.ai_assistant)
-            result_text = f"\n💡 正确答案: {clean_display}\n"
+            result_text = f"\n正确答案: {clean_display}\n"
             self.ai_result_text.insert(tk.END, result_text)
             self.ai_result_text.see(tk.END)
 
@@ -1333,12 +1333,12 @@ class CSVLearningApp:
         
         self.last_judgment_info['is_correct'] = True
         
-        result_text = f"\n{'─'*80}\n"
-        result_text += f"📝 ** 手动修改判定 ** 📝\n"
-        result_text += f"✅ 已将此题标记为：正确 ✓\n"
-        result_text += f"📝 单词: {info['col1']} | 词性: {info['col2']}\n"
+        result_text = f"\n{'-'*80}\n"
+        result_text += f"** 手动修改判定 **\n"
+        result_text += f"已将此题标记为：正确\n"
+        result_text += f"单词: {info['col1']} | 词性: {info['col2']}\n"
         result_text += f"你的答案: {info['user_answer']} | 标准答案: {info['correct_answer']}\n"
-        result_text += f"{'─'*80}\n\n"
+        result_text += f"{'-'*80}\n\n"
         
         self.ai_result_text.insert(tk.END, result_text)
         self.ai_result_text.see(tk.END)
@@ -1366,13 +1366,13 @@ class CSVLearningApp:
         
         self.last_judgment_info['is_correct'] = False
         
-        result_text = f"\n{'─'*80}\n"
-        result_text += f"📝 ** 手动修改判定 ** 📝\n"
-        result_text += f"❌ 已将此题标记为：错误 ✗\n"
-        result_text += f"📝 单词: {info['col1']} | 词性: {info['col2']}\n"
+        result_text = f"\n{'-'*80}\n"
+        result_text += f"** 手动修改判定 **\n"
+        result_text += f"已将此题标记为：错误\n"
+        result_text += f"单词: {info['col1']} | 词性: {info['col2']}\n"
         result_text += f"你的答案: {info['user_answer']} | 标准答案: {info['correct_answer']}\n"
         result_text += f"已加入错题本，将在下一轮复习\n"
-        result_text += f"{'─'*80}\n\n"
+        result_text += f"{'-'*80}\n\n"
         
         self.ai_result_text.insert(tk.END, result_text)
         self.ai_result_text.see(tk.END)
@@ -1389,32 +1389,32 @@ class CSVLearningApp:
         accuracy = (self.correct_count / self.total_questions * 100) if self.total_questions > 0 else 0
         
         result_text = f"\n{'='*80}\n"
-        result_text += f"🎉 第 {self.current_round} 轮完成！\n"
+        result_text += f"第 {self.current_round} 轮完成！\n"
         result_text += f"{'='*80}\n\n"
-        result_text += f"📊 学习统计:\n"
+        result_text += f"学习统计:\n"
         result_text += f"   • 总题数: {self.total_questions}\n"
         result_text += f"   • 正确数: {self.correct_count}\n"
         result_text += f"   • 错误数: {self.wrong_count}\n"
         result_text += f"   • 正确率: {accuracy:.1f}%\n\n"
 
         if self.wrong_answers:
-            result_text += f"⚠️ 有 {len(self.wrong_answers)} 道错题需要复习\n"
-            result_text += f"💪 点击'开始新一轮复习'继续巩固学习！\n"
+            result_text += f"有 {len(self.wrong_answers)} 道错题需要复习\n"
+            result_text += f"点击'开始新一轮复习'继续巩固学习！\n"
         else:
-            result_text += f"🌟 太棒了！全部答对！你已经掌握了所有内容！\n"
+            result_text += f"太棒了！全部答对！你已经掌握了所有内容！\n"
 
         result_text += f"\n{'='*80}\n\n"
 
         self.ai_result_text.insert(tk.END, result_text)
         self.ai_result_text.see(tk.END)
 
-        self.col1_value.config(text="🎊 本轮完成!")
+        self.col1_value.config(text="本轮完成!")
         self.col2_value.config(text="")
         self.answer_entry.delete(0, tk.END)
 
     def start_new_round(self):
         if not self.wrong_answers:
-            messagebox.showinfo("提示", "没有错题需要复习！\n\n太棒了！你已经掌握了所有内容！🎉")
+            messagebox.showinfo("提示", "没有错题需要复习！\n\n太棒了！你已经掌握了所有内容！")
             return
 
         original_wrong = [row[:3] for row in self.wrong_answers]
@@ -1430,10 +1430,10 @@ class CSVLearningApp:
         self.display_current_question()
 
         result_text = f"\n{'='*80}\n"
-        result_text += f"🔄 开始第 {self.current_round} 轮复习\n"
+        result_text += f"开始第 {self.current_round} 轮复习\n"
         result_text += f"{'='*80}\n\n"
-        result_text += f"📚 本轮题目数: {self.total_questions}\n"
-        result_text += f"🎯 目标: 掌握所有错题！\n\n"
+        result_text += f"本轮题目数: {self.total_questions}\n"
+        result_text += f"目标: 掌握所有错题！\n\n"
         self.ai_result_text.insert(tk.END, result_text)
         self.ai_result_text.see(tk.END)
 
@@ -1458,7 +1458,7 @@ class CSVLearningApp:
                     writer.writerow(['第一列', '第二列', '第三列', '你的答案', '正确答案'])
                     writer.writerows(self.wrong_answers)
 
-                messagebox.showinfo("成功", f"✅ 错题本已导出到:\n\n{save_path}\n\n共 {len(self.wrong_answers)} 条记录")
+                messagebox.showinfo("成功", f"错题本已导出到:\n\n{save_path}\n\n共 {len(self.wrong_answers)} 条记录")
             except Exception as e:
                 messagebox.showerror("错误", f"导出失败: {str(e)}")
 
@@ -1485,19 +1485,19 @@ class CSVLearningApp:
             try:
                 header = []
                 header.append("=" * 72)
-                header.append("📚 CSV词汇学习工具 - AI判定日志导出")
+                header.append("CSV词汇学习工具 - AI判定日志导出")
                 header.append("=" * 72)
-                header.append(f"🕒 导出时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-                header.append(f"📂 CSV文件: {self.csv_file_path or '（未加载）'}")
-                header.append(f"🔁 当前轮次: {self.current_round}")
-                header.append(f"📊 当前进度: 第 {self.current_index + (1 if self.current_index > 0 else 0)} / {self.total_questions} 题")
-                header.append(f"✅ 正确数: {self.correct_count}    ❌ 错误数: {self.wrong_count}")
+                header.append(f"导出时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                header.append(f"CSV文件: {self.csv_file_path or '（未加载）'}")
+                header.append(f"当前轮次: {self.current_round}")
+                header.append(f"当前进度: 第 {self.current_index + (1 if self.current_index > 0 else 0)} / {self.total_questions} 题")
+                header.append(f"正确数: {self.correct_count}    错误数: {self.wrong_count}")
                 if self.correct_count + self.wrong_count > 0:
                     rate = self.correct_count / (self.correct_count + self.wrong_count) * 100
-                    header.append(f"🎯 正确率: {rate:.1f}%")
-                header.append(f"🦙 AI提供商: {self.ai_assistant.ai_provider}")
-                header.append(f"🤖 模型: {self.ai_assistant.model}")
-                header.append(f"🧹 括号清理: {'已开启' if self.ai_assistant.clean_parentheses else '已关闭'}")
+                    header.append(f"正确率: {rate:.1f}%")
+                header.append(f"AI提供商: {self.ai_assistant.ai_provider}")
+                header.append(f"模型: {self.ai_assistant.model}")
+                header.append(f"括号清理: {'已开启' if self.ai_assistant.clean_parentheses else '已关闭'}")
                 header.append("=" * 72)
                 header.append("")
                 header.append("")
@@ -1510,10 +1510,10 @@ class CSVLearningApp:
                 size_kb = os.path.getsize(save_path) / 1024
                 messagebox.showinfo(
                     "成功",
-                    f"✅ AI判定日志已导出到:\n\n{save_path}\n\n"
-                    f"📝 日志大小: {size_kb:.1f} KB\n"
-                    f"🔁 当前轮次: 第 {self.current_round} 轮\n"
-                    f"🎯 进度: {self.correct_count}✅ / {self.wrong_count}❌"
+                    f"AI判定日志已导出到:\n\n{save_path}\n\n"
+                    f"日志大小: {size_kb:.1f} KB\n"
+                    f"当前轮次: 第 {self.current_round} 轮\n"
+                    f"进度: {self.correct_count} / {self.wrong_count}"
                 )
             except Exception as e:
                 messagebox.showerror("错误", f"导出AI日志失败: {str(e)}")
